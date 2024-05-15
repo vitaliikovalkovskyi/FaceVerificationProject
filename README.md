@@ -1,4 +1,5 @@
-![Логотип](assets/logo.jpg)
+<img src="assets/logo.png" alt="Логотип" width="200" />
+
 
 
 # Image Verification Project
