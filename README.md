@@ -18,7 +18,7 @@
 
 1. Клонування репозиторію:
     ```bash
-    git clone https://github.com/vitaliikovalkovskyi/ImageVerificationProject.git
+    git clone https://github.com/vitaliikovalkovskyi/FaceVerificationProject.git
     cd ImageVerificationProject
     ```
 
