@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Image Verification</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600&display=swap');
+
+        body {
+            font-family: 'Montserrat', sans-serif;
+            background: linear-gradient(to right, #ffecd2 0%, #fcb69f 100%);
+            margin: 0;
+            padding: 0;
+            height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        /* Стилі для анімації завантаження */
+        .loader-container {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5); /* напівпрозорий чорний фон */
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+            display: none;
+        }
+
+        .loader {
+            border: 16px solid #f3f3f3;
+            border-radius: 50%;
+            border-top: 16px solid #3498db;
+            width: 120px;
+            height: 120px;
+            animation: spin 2s linear infinite;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        /* Центрування анімації на сторінці */
+        .loading-container {
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            text-align: center;
+        }
+
+        .images-container {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            margin-top: 20px;
+        }
+
+        .image-wrapper {
+            margin: 0 20px;
+        }
+
+        img {
+            max-width: 300px;
+            border: 2px solid #fff;
+            border-radius: 10px;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+        }
+
+        .hidden {
+            display: none;
+        }
+
+        h1, h2, p {
+            color: #333;
+        }
+
+        button {
+            background-color: #3498db;
+            border: none;
+            color: white;
+            padding: 15px 32px;
+            text-align: center;
+            text-decoration: none;
+            display: inline-block;
+            font-size: 16px;
+            margin: 4px 2px;
+            cursor: pointer;
+            border-radius: 12px;
+            font-weight: 600;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            transition: background-color 0.3s ease;
+        }
+
+        button:hover {
+            background-color: #2980b9;
+        }
+
+        .result-true {
+            color: green;
+            font-size: 24px;
+            font-weight: bold;
+        }
+
+        .result-false {
+            color: red;
+            font-size: 24px;
+            font-weight: bold;
+        }
+
+        .result-success {
+            color: blue;
+            font-size: 24px;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <div class="loading-container">
+        <h1>Захоплення та Верифікація Зображення</h1>
+        <button onclick="captureTestPhoto()">Захопити нове зображення</button>
+        <button onclick="verifyImage()">Перевірити зображення</button>
+    
+        <p id="result"></p>
+        <div class="images-container">
+            <div id="test-photo-container" class="image-wrapper hidden">
+                <h2>Test Photo</h2>
+                <img id="test-photo" src="/static/testPhoto.jpg" alt="Test Photo">
+            </div>
+            <div id="captured-photo-container" class="image-wrapper hidden">
+                <h2>Captured Photo</h2>
+                <img id="captured-photo" src="" alt="Captured Photo">
+            </div>
+        </div>
+    </div>
+    
+    <div id="loader-container" class="loader-container">
+        <div class="loader"></div>
+    </div>
+    
+    <script>
+        function showLoader() {
+            document.getElementById('loader-container').style.display = 'flex';
+            document.getElementById('result').innerText = '';
+        }
+
+        function hideLoader() {
+            document.getElementById('loader-container').style.display = 'none';
+        }
+
+        function verifyImage() {
+            showLoader();
+
+            fetch('/verify-image/')
+                .then(response => response.json())
+                .then(data => {
+                    hideLoader();
+                    const resultElement = document.getElementById('result');
+                    if (data.verified !== undefined) {
+                        resultElement.innerText = "Is verified: " + data.verified;
+                        resultElement.className = data.verified ? 'result-true' : 'result-false';
+                        document.getElementById('captured-photo').src = "/static/captured_image.jpg?" + new Date().getTime();
+                        document.getElementById('captured-photo-container').classList.remove('hidden');
+                    } else {
+                        resultElement.innerText = "Error: " + data.error;
+                        resultElement.className = 'result-false';
+                    }
+                })
+                .catch(error => {
+                    hideLoader();
+                    const resultElement = document.getElementById('result');
+                    resultElement.innerText = "Error: " + error;
+                    resultElement.className = 'result-false';
+                });
+        }
+
+        function captureTestPhoto() {
+            showLoader();
+
+            fetch('/capture-test-photo/')
+                .then(response => response.json())
+                .then(data => {
+                    hideLoader();
+                    const resultElement = document.getElementById('result');
+                    if (data.success) {
+                        resultElement.innerText = "New test photo captured successfully.";
+                        resultElement.className = 'result-success';
+                        document.getElementById('test-photo').src = "/static/testPhoto.jpg?" + new Date().getTime();
+                        document.getElementById('test-photo-container').classList.remove('hidden');
+                    } else {
+                        resultElement.innerText = "Error: " + data.error;
+                        resultElement.className = 'result-false';
+                    }
+                })
+                .catch(error => {
+                    hideLoader();
+                    const resultElement = document.getElementById('result');
+                    resultElement.innerText = "Error: " + error;
+                    resultElement.className = 'result-false';
+                });
+        }
+    </script>
+</body>
+</html>
