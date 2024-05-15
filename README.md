@@ -1,4 +1,4 @@
-![Логотип](assets/logo.png)
+![Логотип](assets/logo.jpg)
 
 
 # Image Verification Project
