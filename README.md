@@ -1,4 +1,6 @@
-<img src="assets/logo.jpg" alt="Логотип" width="200" />
+<div align="center">
+  <img src="assets/logo.jpg" alt="Логотип" width="300" />
+</div>
 
 
 
