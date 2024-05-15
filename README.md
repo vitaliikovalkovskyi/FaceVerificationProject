@@ -1,4 +1,4 @@
-<img src="assets/logo.png" alt="Логотип" width="200" />
+<img src="assets/logo.jpg" alt="Логотип" width="200" />
 
 
 
