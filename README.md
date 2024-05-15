@@ -1,4 +1,5 @@
-![Логотип](DALL·E 2024-05-15 16.36.35 - A modern, sleek logo for a face verification app. The design should feature a stylized human face outline or a biometric facial grid, with elements li.jpg)
+![Логотип](assets/logo.png)
+
 
 # Image Verification Project
 
