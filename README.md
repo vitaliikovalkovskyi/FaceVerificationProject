@@ -24,12 +24,13 @@
 
 2. Створення та активація віртуального середовища:
     ```bash
-    python -m venv env
-    source env/bin/activate   # Для Windows використовуйте `env\Scripts\activate`
+    python -m venv venv
+    venv\Scripts\activate
     ```
 
 3. Встановлення залежностей:
     ```bash
+    cd..
     pip install -r requirements.txt
     ```
 
