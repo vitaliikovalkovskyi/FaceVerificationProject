@@ -117,10 +117,16 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/5.0/howto/static-files/
 
 import os
+# Шлях до папки static
+STATIC_DIR = os.path.join(BASE_DIR, 'static')
 
+# Перевіряємо чи існує папка static і створюємо її, якщо її немає
+if not os.path.exists(STATIC_DIR):
+    os.makedirs(STATIC_DIR)
 STATIC_URL = '/static/'
 STATICFILES_DIRS = [
     os.path.join(BASE_DIR, 'static'),
+    os.path.join(BASE_DIR, "assets"),
 ]
 
 # Default primary key field type
