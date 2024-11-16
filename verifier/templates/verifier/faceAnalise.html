@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Face Analysis</title>
+    {% load static %}
+    <link rel="icon" href="{% static 'logo.jpg' %}">
+    <style>
+        /* Додайте свої стилі тут */
+        body {
+            font-family: 'Montserrat', sans-serif;
+            background: linear-gradient(to right, #ffecd2 0%, #fcb69f 100%);
+            margin: 0;
+            padding: 0;
+            height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            flex-direction: column;
+        }
+
+        .form-container {
+            background: rgba(255, 255, 255, 0.7);
+            padding: 30px 40px;
+            border-radius: 15px;
+            box-shadow: 0 8px 16px rgba(0, 0, 0, 0.2);
+            text-align: center;
+            max-width: 400px;
+            width: 100%;
+        }
+
+        .form-container h1 {
+            color: #333;
+            font-size: 24px;
+            font-weight: 600;
+            margin-bottom: 20px;
+        }
+
+        
+        .file-input {
+            display: block;
+            margin: 15px auto;
+            padding: 10px;
+            font-size: 14px;
+            color: #333;
+            border: 2px solid #ddd;
+            border-radius: 8px;
+            width: 100%;
+            max-width: 320px;
+            outline: none;
+            box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+
+        button {
+            background-color: #3498db;
+            border: none;
+            color: white;
+            padding: 15px 32px;
+            font-size: 16px;
+            cursor: pointer;
+            border-radius: 12px;
+            font-weight: 600;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            transition: background-color 0.3s ease;
+            width: 100%;
+            max-width: 200px;
+        }
+
+        button:hover {
+            background-color: #2980b9;
+        }
+
+        .back-button {
+            
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            background-color: #3498db;
+            border: none;
+            color: white;
+            padding: 10px 20px;
+            font-size: 14px;
+            border-radius: 8px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: background-color 0.3s ease;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+
+        .back-button:hover {
+            background-color: #2980b9;
+        }
+
+        .result-container {
+            margin-top: 30px;
+            text-align: center;
+            background-color: rgba(255, 255, 255, 0.7);
+            padding: 30px;
+            border-radius: 15px;
+            box-shadow: 0 8px 16px rgba(0, 0, 0, 0.2);
+            width: 100%;
+            max-width: 500px;
+        }
+
+        .result-container h2 {
+            font-size: 24px;
+            margin-bottom: 10px;
+            color: #333;
+        }
+
+        .result-container ul {
+            list-style-type: none;
+            padding: 0;
+            margin: 20px 0;
+            font-size: 18px;
+        }
+
+        .result-container li {
+            margin-bottom: 10px;
+        }
+
+        .result-container .result-label {
+            font-weight: bold;
+            color: #3498db;
+        }
+
+        .result-container .result-value {
+            color: #333;
+        }
+
+        .result-container img {
+            max-width: 100%;
+            border-radius: 10px;
+            margin-top: 20px;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+        }
+
+        /* Лоадер */
+        .loader-container {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+            /* Напівпрозорий чорний фон */
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+            display: none;
+        }
+
+        .loader {
+            border: 16px solid #f3f3f3;
+            border-radius: 50%;
+            border-top: 16px solid #3498db;
+            width: 120px;
+            height: 120px;
+            animation: spin 2s linear infinite;
+        }
+
+        @keyframes spin {
+            0% {
+                transform: rotate(0deg);
+            }
+
+            100% {
+                transform: rotate(360deg);
+            }
+        }
+    </style>
+</head>
+
+<body>
+
+    <a href="{% url 'home' %}">
+        <button class="back-button">Назад</button>
+    </a>
+
+    <div class="form-container">
+        <h1>Аналізування обличчя</h1>
+        <form id="face-analysis-form" action="{% url 'faceAnalise' %}" method="POST" enctype="multipart/form-data" onsubmit="showLoader()">
+            {% csrf_token %}
+            <label for="photo">Виберіть зображення:</label>
+            <input type="file" name="photo" id="photo" accept="image/*" class="file-input">
+        
+            <label for="photo_url">або введіть URL зображення:</label>
+            <input type="text" name="photo_url" id="photo_url" placeholder="Введення URL зображення" class="file-input">
+        
+            <button type="submit">Аналізувати</button>
+        </form>
+        
+    </div>
+
+    {% if result %}
+    <div class="result-container">
+        <h2>Результат аналізу</h2>
+        {% if result.error %}
+        <p>Error: {{ result.error }}</p>
+        {% else %}
+        <ul>
+            <li><span class="result-label">Age:</span> <span class="result-value">{{ result.age }}</span></li>
+            <li><span class="result-label">Gender:</span> <span class="result-value">{{ result.gender }}</span></li>
+            <li><span class="result-label">Emotion:</span> <span class="result-value">{{ result.dominant_emotion}}</span></li>
+        </ul>
+        <div style="width: 300px; height: 200px; overflow: hidden; display: flex; align-items: center; justify-content: center; margin: 0 auto;">
+            <img src="{{ MEDIA_URL }}{{ result.img_path }}" alt="Uploaded Image"
+                style="width: 100%; height: 100%; object-fit: cover;">
+        </div>
+
+        {% endif %}
+    </div>
+    {% endif %}
+
+    <!-- Лоадер -->
+    <div id="loader-container" class="loader-container">
+        <div class="loader"></div>
+    </div>
+
+
+    <script>
+        function showLoader() {
+            document.getElementById('loader-container').style.display = 'flex';
+        }
+
+        function hideLoader() {
+            document.getElementById('loader-container').style.display = 'none';
+        }
+    </script>
+</body>
+
+</html>

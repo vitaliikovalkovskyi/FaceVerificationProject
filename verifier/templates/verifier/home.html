@@ -127,8 +127,11 @@
 <body>
     <div class="loading-container">
         <h1>Захоплення та Верифікація Зображення</h1>
-        <button onclick="captureTestPhoto()">Захопити нове зображення</button>
-        <button onclick="verifyImage()">Перевірити зображення</button>
+        <button style="width: 15vw;" onclick="captureTestPhoto()">Захопити нове зображення</button>
+        <button style="width: 15vw;" onclick="verifyImage()">Перевірити зображення</button>
+        <a href="{% url 'faceAnalise' %}">
+            <button style="width: 15vw;">Аналізування облич</button>
+        </a>
     
         <p id="result"></p>
         <div class="images-container">
