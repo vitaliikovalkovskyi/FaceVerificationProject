@@ -88,6 +88,8 @@ def faceAnalise(request):
                 analysis_result = DeepFace.analyze(file_path, actions=['age', 'gender', 'emotion'])
                 result = analysis_result[0]  # Отримуємо результат аналізу для першого обличчя на фото
                 result['img_path'] = relative_path  # Додаємо шлях до зображення в результат
+                if 'gender' in result and isinstance(result['gender'], dict):
+                    result['gender'] = {k: round(v, 2) for k, v in result['gender'].items()}
             except Exception as e:
                 result = {"error": str(e)}  # Якщо сталася помилка
 
