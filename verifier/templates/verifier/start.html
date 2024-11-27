@@ -85,26 +85,7 @@
         }
 
         
-        .back-button {
-            
-            position: absolute;
-            top: 10px;
-            left: 10px;
-            background-color: #3498db;
-            border: none;
-            color: white;
-            padding: 10px 20px;
-            font-size: 14px;
-            border-radius: 8px;
-            font-weight: bold;
-            cursor: pointer;
-            transition: background-color 0.3s ease;
-            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-        }
 
-        .back-button:hover {
-            background-color: #2980b9;
-        }
 
         button {
             background-color: #3498db;
@@ -149,14 +130,13 @@
 <body>
     <div class="loading-container">
         <h1>Захоплення та Верифікація Зображення</h1>
-        <button style="width: 15vw;" onclick="captureTestPhoto()">Захопити нове зображення</button>
-        <button style="width: 15vw;" onclick="verifyImage()">Перевірити зображення</button>
-        <!-- <a href="{% url 'faceAnalise' %}">
-            <button style="width: 15vw;">Аналізування облич</button>
-        </a> -->
-        <a href="{% url 'start' %}">
-            <button class="back-button">Назад</button>
+        <a href="{% url 'home' %}">
+            <button style="width: 15vw;">Біометрична аутентифікація за обличчям</button>
         </a>
+        <a href="{% url 'faceAnalise' %}">
+            <button style="width: 15vw;">Аналізування облич</button>
+        </a>
+
     
         <p id="result"></p>
         <div class="images-container">

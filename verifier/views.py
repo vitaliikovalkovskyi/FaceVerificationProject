@@ -47,6 +47,9 @@ import os
 from django.conf import settings
 import requests
 
+def start(request):
+    return render(request, 'verifier/start.html')
+
 def faceAnalise(request):
     result = None
     relative_path = None  
