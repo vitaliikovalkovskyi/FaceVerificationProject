@@ -7,7 +7,7 @@ from django.templatetags.static import static
 import os
 
 def capture_image(file_name="captured_image.jpg"):
-    cap = cv2.VideoCapture(2)
+    cap = cv2.VideoCapture(1)
     ret, frame = cap.read()
     if not ret:
         return None
@@ -21,11 +21,31 @@ def verify_image(request):
     if captured_image_path:
         try:
             result = DeepFace.verify("static/testPhoto.jpg", captured_image_path, enforce_detection=False)
-            return JsonResponse({"verified": result["verified"]})
+
+            # Імітація "accuracy" — тут очікується True, бо порівнюємо з testPhoto
+            expected = True
+            is_correct = result["verified"] == expected
+            accuracy = int(is_correct)
+
+            # Додатковий лог в консоль
+            print("=== Перевірка облич ===")
+            print(f"Verified: {result['verified']}")
+            print(f"Distance: {result['distance']:.4f}")
+            print(f"Threshold: {result['threshold']:.4f}")
+            print(f"Accuracy (1 = правильно): {accuracy}")
+
+            return JsonResponse({
+                "verified": result["verified"],
+                "distance": result["distance"],
+                "threshold": result["threshold"],
+                "accuracy": accuracy
+            })
+
         except ValueError as e:
             return JsonResponse({"error": str(e)}, status=400)
     else:
         return JsonResponse({"error": "Не вдалося захопити зображення для перевірки"}, status=400)
+
 
 def capture_test_photo(request):
     test_photo_path = capture_image("testPhoto.jpg")
