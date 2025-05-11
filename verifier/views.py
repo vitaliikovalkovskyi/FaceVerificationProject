@@ -7,7 +7,7 @@ from django.templatetags.static import static
 import os
 
 def capture_image(file_name="captured_image.jpg"):
-    cap = cv2.VideoCapture(0)
+    cap = cv2.VideoCapture(2)
     ret, frame = cap.read()
     if not ret:
         return None
