@@ -7,7 +7,7 @@ from django.templatetags.static import static
 import os
 
 def capture_image(file_name="captured_image.jpg"):
-    cap = cv2.VideoCapture(1)
+    cap = cv2.VideoCapture(0)
     ret, frame = cap.read()
     if not ret:
         return None
@@ -75,45 +75,61 @@ def faceAnalise(request):
     relative_path = None  
 
     if request.method == 'POST':
-        # Обробка завантаженого файлу
+        # Варіант 1: Завантаження файлу з комп'ютера
         if request.FILES.get('photo'):
             photo = request.FILES['photo']
-            relative_path = os.path.join('uploads', photo.name)  # Відносний шлях до файлу
-            file_path = os.path.join(settings.MEDIA_ROOT, relative_path)  # Абсолютний шлях
-
             
+            # Формуємо шляхи
+            relative_path = os.path.join('uploads', photo.name)
+            file_path = os.path.join(settings.MEDIA_ROOT, relative_path)
+
+            # === ВИПРАВЛЕННЯ: Створюємо папку, якщо її немає ===
+            os.makedirs(os.path.dirname(file_path), exist_ok=True)
+            # ===================================================
+
+            # Тепер безпечно зберігаємо файл
             with open(file_path, 'wb') as f:
                 for chunk in photo.chunks():
                     f.write(chunk)
 
-        # Обробка URL
+        # Варіант 2: Завантаження через URL (тут теж треба додати перевірку)
         elif request.POST.get('photo_url'):
-            photo_url = request.POST.get('photo_url')  # Отримуємо посилання на зображення
+            photo_url = request.POST.get('photo_url')
             try:
                 response = requests.get(photo_url)
                 if response.status_code == 200:
-                    file_name = os.path.basename(photo_url.split("?")[0])  # Ім'я файлу без параметрів у URL
+                    file_name = os.path.basename(photo_url.split("?")[0])
                     relative_path = os.path.join('uploads', file_name)
                     file_path = os.path.join(settings.MEDIA_ROOT, relative_path)
 
-                    # Зберігаємо файл у папку media/uploads
+                    # === ТУТ ТЕЖ ДОДАЄМО СТВОРЕННЯ ПАПКИ ===
+                    os.makedirs(os.path.dirname(file_path), exist_ok=True)
+                    # =======================================
+
                     with open(file_path, 'wb') as f:
                         f.write(response.content)
                 else:
-                    raise Exception("Не вдалося завантажити зображення за посиланням.")
+                    raise Exception("Не вдалося завантажити зображення.")
             except Exception as e:
-                result = {"error": str(e)}  
-                return render(request, 'verifier/faceAnalise.html', {'result': result, 'MEDIA_URL': settings.MEDIA_URL})
+                result = {"error": str(e)}
+                return render(request, 'verifier/faceAnalise.html', {'result': result})
 
-        # Аналізуємо фото за допомогою DeepFace
+        # Аналіз через DeepFace (код залишається без змін)
         if relative_path:
             try:
-                analysis_result = DeepFace.analyze(file_path, actions=['age', 'gender', 'emotion'])
-                result = analysis_result[0]  # Отримуємо результат аналізу для першого обличчя на фото
-                result['img_path'] = relative_path  # Додаємо шлях до зображення в результат
-                if 'gender' in result and isinstance(result['gender'], dict):
-                    result['gender'] = {k: round(v, 2) for k, v in result['gender'].items()}
+                # Переконуємось, що файл записався
+                if os.path.exists(file_path):
+                    analysis_result = DeepFace.analyze(file_path, actions=['age', 'gender', 'emotion'])
+                    result = analysis_result[0]
+                    result['img_path'] = relative_path
+                    
+                    if 'gender' in result and isinstance(result['gender'], dict):
+                        # Вибираємо стать з найбільшою ймовірністю
+                        gender = max(result['gender'], key=result['gender'].get)
+                        result['gender'] = gender
+                else:
+                    result = {"error": "Файл не знайдено після завантаження"}
             except Exception as e:
-                result = {"error": str(e)}  # Якщо сталася помилка
+                result = {"error": f"Помилка аналізу: {str(e)}"}
 
     return render(request, 'verifier/faceAnalise.html', {'result': result, 'MEDIA_URL': settings.MEDIA_URL})
