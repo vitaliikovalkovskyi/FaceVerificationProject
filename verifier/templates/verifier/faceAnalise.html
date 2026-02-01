@@ -1,236 +1,360 @@
 <!DOCTYPE html>
-<html lang="en">
-
+<html lang="uk">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Face Analysis</title>
     {% load static %}
     <link rel="icon" href="{% static 'logo.jpg' %}">
+
     <style>
-        /* Додайте свої стилі тут */
+        /* --- 1. CONFIGURATION & VARIABLES --- */
+        :root {
+            /* Palette */
+            --primary-color: #4f46e5;
+            --primary-hover: #4338ca;
+            --secondary-color: #64748b;
+            --border-color: #cbd5e1;
+            --bg-gradient-start: #f8fafc;
+            --bg-gradient-end: #e2e8f0;
+            --card-bg: #ffffff;
+            
+            /* Spacing & Radius */
+            --radius-lg: 20px;
+            --radius-md: 12px;
+            --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+        }
+
+        @import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&display=swap');
+
+        /* --- 2. GLOBAL RESET --- */
         body {
             font-family: 'Montserrat', sans-serif;
-            background: linear-gradient(to right, #ffecd2 0%, #fcb69f 100%);
+            background: linear-gradient(135deg, var(--bg-gradient-start) 0%, var(--bg-gradient-end) 100%);
+            color: #1e293b;
             margin: 0;
             padding: 0;
-            height: 100vh;
+            min-height: 100vh;
             display: flex;
-            justify-content: center;
-            align-items: center;
             flex-direction: column;
+            align-items: center;
+            justify-content: center;
         }
 
-        .form-container {
-            background: rgba(255, 255, 255, 0.7);
-            padding: 30px 40px;
-            border-radius: 15px;
-            box-shadow: 0 8px 16px rgba(0, 0, 0, 0.2);
-            text-align: center;
-            max-width: 400px;
-            width: 100%;
-        }
-
-        .form-container h1 {
-            color: #333;
-            font-size: 24px;
-            font-weight: 600;
-            margin-bottom: 20px;
-        }
-
+        h1, h2 { margin: 0; font-weight: 700; color: #0f172a; }
         
-        .file-input {
-            display: block;
-            margin: 15px auto;
-            padding: 10px;
-            font-size: 14px;
-            color: #333;
-            border: 2px solid #ddd;
-            border-radius: 8px;
+        /* --- 3. LAYOUT & CARD --- */
+        .main-container {
             width: 100%;
-            max-width: 320px;
-            outline: none;
-            box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.1);
+            max-width: 600px; /* Optimal width for forms */
+            padding: 1.5rem;
         }
 
-        button {
-            background-color: #3498db;
-            border: none;
-            color: white;
-            padding: 15px 32px;
-            font-size: 16px;
-            cursor: pointer;
-            border-radius: 12px;
-            font-weight: 600;
-            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-            transition: background-color 0.3s ease;
+        .card {
+            background: var(--card-bg);
+            border-radius: var(--radius-lg);
+            padding: 2.5rem;
+            box-shadow: var(--shadow-lg);
             width: 100%;
-            max-width: 200px;
+            box-sizing: border-box;
+            position: relative;
+            overflow: hidden;
         }
 
-        button:hover {
-            background-color: #2980b9;
-        }
-
-        .back-button {
-            
+        .card::before {
+            content: '';
             position: absolute;
-            top: 10px;
-            left: 10px;
-            background-color: #3498db;
-            border: none;
-            color: white;
-            padding: 10px 20px;
-            font-size: 14px;
-            border-radius: 8px;
-            font-weight: bold;
-            cursor: pointer;
-            transition: background-color 0.3s ease;
-            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            top: 0; left: 0; width: 100%; height: 6px;
+            background: linear-gradient(90deg, var(--primary-color), #818cf8);
         }
 
-        .back-button:hover {
-            background-color: #2980b9;
-        }
-
-        .result-container {
-            margin-top: 30px;
-            text-align: center;
-            background-color: rgba(255, 255, 255, 0.7);
-            padding: 30px;
-            border-radius: 15px;
-            box-shadow: 0 8px 16px rgba(0, 0, 0, 0.2);
+        /* Header */
+        .card-header {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            margin-bottom: 2rem;
             width: 100%;
-            max-width: 500px;
         }
 
-        .result-container h2 {
-            font-size: 24px;
-            margin-bottom: 10px;
+        .back-link-wrapper {
+            align-self: flex-start;
+            margin-bottom: 1rem;
+        }
+
+        .page-title {
+            font-size: 1.8rem;
+            text-align: center;
+            background: -webkit-linear-gradient(45deg, #4f46e5, #ec4899);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        /* --- 4. FORM ELEMENTS --- */
+        .form-group {
+            margin-bottom: 1.5rem;
+            width: 100%;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 0.5rem;
+            font-weight: 600;
+            color: #334155;
+            font-size: 0.95rem;
+        }
+
+        .form-input {
+            width: 100%;
+            padding: 12px 16px;
+            font-size: 1rem;
+            font-family: inherit;
             color: #333;
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-md);
+            outline: none;
+            transition: border-color 0.2s, box-shadow 0.2s;
+            background-color: #f8fafc;
+            box-sizing: border-box;
         }
 
-        .result-container ul {
-            list-style-type: none;
-            padding: 0;
-            margin: 20px 0;
-            font-size: 18px;
+        .form-input:focus {
+            border-color: var(--primary-color);
+            box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
+            background-color: #fff;
         }
 
-        .result-container li {
-            margin-bottom: 10px;
+        /* File input specific styling */
+        input[type="file"]::file-selector-button {
+            margin-right: 15px;
+            border: none;
+            background: #e2e8f0;
+            padding: 8px 12px;
+            border-radius: 6px;
+            color: #475569;
+            cursor: pointer;
+            font-weight: 600;
+            transition: background .2s;
+        }
+        input[type="file"]::file-selector-button:hover {
+            background: #cbd5e1;
         }
 
-        .result-container .result-label {
-            font-weight: bold;
-            color: #3498db;
+        .divider {
+            text-align: center;
+            margin: 1.5rem 0;
+            position: relative;
+            color: var(--secondary-color);
+            font-size: 0.9rem;
+            font-weight: 500;
         }
 
-        .result-container .result-value {
-            color: #333;
+        .divider::before, .divider::after {
+            content: "";
+            position: absolute;
+            top: 50%;
+            width: 40%;
+            height: 1px;
+            background-color: #e2e8f0;
+        }
+        .divider::before { left: 0; }
+        .divider::after { right: 0; }
+
+        /* --- 5. BUTTONS --- */
+        .btn {
+            background-color: var(--primary-color);
+            color: white;
+            border: none;
+            padding: 14px 24px;
+            font-size: 1rem;
+            font-weight: 600;
+            border-radius: var(--radius-md);
+            cursor: pointer;
+            width: 100%;
+            transition: all 0.2s ease;
+            box-shadow: 0 4px 6px rgba(79, 70, 229, 0.2);
         }
 
-        .result-container img {
-            max-width: 100%;
-            border-radius: 10px;
-            margin-top: 20px;
-            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+        .btn:hover {
+            background-color: var(--primary-hover);
+            transform: translateY(-2px);
         }
 
-        /* Лоадер */
-        .loader-container {
-            position: fixed;
-            top: 0;
-            left: 0;
+        .btn-secondary {
+            background-color: #e2e8f0;
+            color: #475569;
+            padding: 8px 16px;
+            font-size: 0.9rem;
+            width: auto;
+            box-shadow: none;
+        }
+        .btn-secondary:hover {
+            background-color: #cbd5e1;
+        }
+
+        /* --- 6. RESULTS SECTION --- */
+        .result-section {
+            margin-top: 2.5rem;
+            padding-top: 2rem;
+            border-top: 1px solid #e2e8f0;
+            animation: fadeIn 0.5s ease-out;
+        }
+
+        .result-title {
+            font-size: 1.25rem;
+            margin-bottom: 1.5rem;
+            text-align: center;
+        }
+
+        .result-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+            gap: 1rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .result-item {
+            background: #f1f5f9;
+            padding: 1rem;
+            border-radius: var(--radius-md);
+            text-align: center;
+        }
+
+        .result-label {
+            display: block;
+            font-size: 0.8rem;
+            color: var(--secondary-color);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 0.25rem;
+        }
+
+        .result-value {
+            font-size: 1.1rem;
+            font-weight: 700;
+            color: var(--primary-color);
+        }
+
+        .image-display {
+            width: 100%;
+            border-radius: var(--radius-md);
+            overflow: hidden;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            border: 4px solid #fff;
+            max-height: 400px;
+        }
+
+        .image-display img {
             width: 100%;
             height: 100%;
-            background-color: rgba(0, 0, 0, 0.5);
-            /* Напівпрозорий чорний фон */
-            display: flex;
+            object-fit: contain; /* Prevents cropping */
+            display: block;
+        }
+
+        /* --- 7. LOADER --- */
+        .loader-container {
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background-color: rgba(255, 255, 255, 0.8);
+            backdrop-filter: blur(5px);
+            display: none;
             justify-content: center;
             align-items: center;
-            z-index: 1000;
-            display: none;
+            z-index: 2000;
         }
 
         .loader {
-            border: 16px solid #f3f3f3;
+            border: 4px solid #e2e8f0;
             border-radius: 50%;
-            border-top: 16px solid #3498db;
-            width: 120px;
-            height: 120px;
-            animation: spin 2s linear infinite;
+            border-top: 4px solid var(--primary-color);
+            width: 50px;
+            height: 50px;
+            animation: spin 1s linear infinite;
         }
 
-        @keyframes spin {
-            0% {
-                transform: rotate(0deg);
-            }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
 
-            100% {
-                transform: rotate(360deg);
-            }
-        }
     </style>
 </head>
 
 <body>
 
-    <a href="{% url 'start' %}">
-        <button class="back-button">Назад</button>
-    </a>
+    <div class="main-container">
+        <div class="card">
+            
+            <div class="card-header">
+                <div class="back-link-wrapper">
+                    <a href="{% url 'start' %}">
+                        <button class="btn btn-secondary">← Назад</button>
+                    </a>
+                </div>
+                <h1 class="page-title">Аналізування обличчя</h1>
+            </div>
 
-    <div class="form-container">
-        <h1>Аналізування обличчя</h1>
-        <form id="face-analysis-form" action="{% url 'faceAnalise' %}" method="POST" enctype="multipart/form-data" onsubmit="showLoader()">
-            {% csrf_token %}
-            <label for="photo">Виберіть зображення:</label>
-            <input type="file" name="photo" id="photo" accept="image/*" class="file-input">
-        
-            <label for="photo_url">або введіть URL зображення:</label>
-            <input type="text" name="photo_url" id="photo_url" placeholder="Введення URL зображення" class="file-input">
-        
-            <button type="submit">Аналізувати</button>
-        </form>
-        
-    </div>
+            <form id="face-analysis-form" action="{% url 'faceAnalise' %}" method="POST" enctype="multipart/form-data" onsubmit="showLoader()">
+                {% csrf_token %}
+                
+                <div class="form-group">
+                    <label for="photo">Завантажити фото</label>
+                    <input type="file" name="photo" id="photo" accept="image/*" class="form-input">
+                </div>
 
-    {% if result %}
-    <div class="result-container">
-        <h2>Результат аналізу</h2>
-        {% if result.error %}
-        <p>Error: {{ result.error }}</p>
-        {% else %}
-        <ul>
-            <li><span class="result-label">Age:</span> <span class="result-value">{{ result.age }}</span></li>
-            <li><span class="result-label">Gender:</span> <span class="result-value">{{ result.gender }}</span></li>
-            <li><span class="result-label">Emotion:</span> <span class="result-value">{{ result.dominant_emotion }}</span></li>
+                <div class="divider">АБО</div>
 
-        </ul>
-        <div style="width: 300px; height: 200px; overflow: hidden; display: flex; align-items: center; justify-content: center; margin: 0 auto;">
-            <img src="{{ MEDIA_URL }}{{ result.img_path }}" alt="Uploaded Image"
-                style="width: 100%; height: 100%; object-fit: cover;">
+                <div class="form-group">
+                    <label for="photo_url">Посилання на зображення</label>
+                    <input type="text" name="photo_url" id="photo_url" placeholder="https://example.com/image.jpg" class="form-input">
+                </div>
+
+                <button type="submit" class="btn">Аналізувати</button>
+            </form>
+
+            {% if result %}
+            <div class="result-section">
+                <h2 class="result-title">Результат аналізу</h2>
+                
+                {% if result.error %}
+                    <p style="color: var(--error-color); text-align: center; font-weight: 600;">
+                        Error: {{ result.error }}
+                    </p>
+                {% else %}
+                    <div class="result-grid">
+                        <div class="result-item">
+                            <span class="result-label">Вік</span>
+                            <span class="result-value">{{ result.age }}</span>
+                        </div>
+                        <div class="result-item">
+                            <span class="result-label">Стать</span>
+                            <span class="result-value">{{ result.gender }}</span>
+                        </div>
+                        <div class="result-item">
+                            <span class="result-label">Емоція</span>
+                            <span class="result-value">{{ result.dominant_emotion }}</span>
+                        </div>
+                    </div>
+
+                    <div class="image-display">
+                        <img src="{{ MEDIA_URL }}{{ result.img_path }}" alt="Analyzed Face">
+                    </div>
+                {% endif %}
+            </div>
+            {% endif %}
+
         </div>
-
-        {% endif %}
     </div>
-    {% endif %}
 
-    <!-- Лоадер -->
     <div id="loader-container" class="loader-container">
         <div class="loader"></div>
     </div>
-
 
     <script>
         function showLoader() {
             document.getElementById('loader-container').style.display = 'flex';
         }
-
         function hideLoader() {
             document.getElementById('loader-container').style.display = 'none';
         }
     </script>
 </body>
-
 </html>

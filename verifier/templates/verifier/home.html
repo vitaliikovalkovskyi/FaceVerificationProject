@@ -1,240 +1,339 @@
 <!DOCTYPE html>
-<html>
+<html lang="uk">
 <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Image Verification</title>
     {% load static %}
     <link rel="icon" type="image/png" href="{% static 'logo.jpg' %}">
 
-
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600&display=swap');
-
-        body {
-            font-family: 'Montserrat', sans-serif;
-            background: linear-gradient(to right, #ffecd2 0%, #fcb69f 100%);
-            margin: 0;
-            padding: 0;
-            height: 100vh;
-            display: flex;
-            justify-content: center;
-            align-items: center;
+        /* --- (CSS STYLES - SAME AS BEFORE) --- */
+        :root {
+            --primary-color: #4f46e5; --primary-hover: #4338ca; --secondary-color: #64748b;
+            --bg-gradient-start: #f8fafc; --bg-gradient-end: #e2e8f0; --card-bg: #ffffff;
+            --success-color: #10b981; --error-color: #ef4444; --warning-color: #f59e0b;
+            --radius-lg: 20px; --radius-md: 12px; --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
         }
-
-        /* Стилі для анімації завантаження */
-        .loader-container {
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background-color: rgba(0, 0, 0, 0.5); /* напівпрозорий чорний фон */
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            z-index: 1000;
-            display: none;
-        }
-
-        .loader {
-            border: 16px solid #f3f3f3;
-            border-radius: 50%;
-            border-top: 16px solid #3498db;
-            width: 120px;
-            height: 120px;
-            animation: spin 2s linear infinite;
-        }
-
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-        }
-
-        /* Центрування анімації на сторінці */
-        .loading-container {
-            display: flex;
-            flex-direction: column;
-            justify-content: center;
-            align-items: center;
-            text-align: center;
-        }
-
-        .images-container {
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            margin-top: 20px;
-        }
-
-        .image-wrapper {
-            margin: 0 20px;
-        }
-
-        img {
-            max-width: 300px;
-            border: 2px solid #fff;
-            border-radius: 10px;
-            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
-        }
-
-        .hidden {
-            display: none;
-        }
-
-        h1, h2, p {
-            color: #333;
-        }
-
+        @import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&display=swap');
+        body { font-family: 'Montserrat', sans-serif; background: linear-gradient(135deg, var(--bg-gradient-start) 0%, var(--bg-gradient-end) 100%); color: #1e293b; margin: 0; padding: 0; min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+        .main-container { width: 100%; max-width: 1000px; padding: 1.5rem; display: flex; justify-content: center; }
+        .card { background: var(--card-bg); border-radius: var(--radius-lg); padding: 2rem; box-shadow: var(--shadow-lg); width: 100%; position: relative; display: flex; flex-direction: column; align-items: center; }
+        .card::before { content: ''; position: absolute; top: 0; left: 0; width: 100%; height: 6px; background: linear-gradient(90deg, var(--primary-color), #818cf8); }
+        .card-header { width: 100%; display: flex; flex-direction: column; align-items: center; margin-bottom: 2rem; }
+        .back-link-wrapper { align-self: flex-start; margin-bottom: 1rem; }
+        .page-title { font-size: 2rem; font-weight: 700; color: #0f172a; margin: 0; }
         
-        .back-button {
-            
-            position: absolute;
-            top: 10px;
-            left: 10px;
-            background-color: #3498db;
-            border: none;
-            color: white;
-            padding: 10px 20px;
-            font-size: 14px;
-            border-radius: 8px;
-            font-weight: bold;
-            cursor: pointer;
-            transition: background-color 0.3s ease;
-            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-        }
+        /* CAMERA UI */
+        .camera-overlay-container { width: 100%; max-width: 600px; background: #000; border-radius: var(--radius-md); overflow: hidden; display: none; flex-direction: column; align-items: center; margin-bottom: 2rem; box-shadow: 0 10px 25px rgba(0,0,0,0.3); position: relative; }
+        .camera-overlay-container.visible { display: flex; }
+        video { width: 100%; display: block; }
+        canvas { display: none; }
+        .camera-instruction { padding: 10px; color: white; text-align: center; background: #222; width: 100%; font-size: 0.9rem; }
+        
+        /* CAMERA SELECT (NEW) */
+        .camera-controls { width: 100%; background: #333; padding: 10px; display: flex; justify-content: center; }
+        .camera-select { padding: 8px; border-radius: 6px; border: none; background: #fff; color: #333; font-family: inherit; width: 100%; max-width: 300px; }
 
-        .back-button:hover {
-            background-color: #2980b9;
-        }
+        /* GRID & COLUMNS */
+        .comparison-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 2rem; width: 100%; margin-bottom: 2rem; }
+        .photo-column { display: flex; flex-direction: column; align-items: center; background: #f8fafc; border-radius: var(--radius-md); padding: 1.5rem; border: 2px dashed #cbd5e1; transition: all 0.3s ease; }
+        .photo-column.active { border-color: var(--primary-color); background: #eef2ff; }
+        .column-title { font-size: 1.1rem; font-weight: 600; margin-bottom: 1rem; color: var(--secondary-color); }
+        .img-preview { width: 100%; height: 200px; background: #e2e8f0; border-radius: 8px; margin-bottom: 1rem; object-fit: cover; display: flex; align-items: center; justify-content: center; color: #94a3b8; font-size: 3rem; overflow: hidden; position: relative; }
+        .img-preview img { width: 100%; height: 100%; object-fit: cover; }
 
-        button {
-            background-color: #3498db;
-            border: none;
-            color: white;
-            padding: 15px 32px;
-            text-align: center;
-            text-decoration: none;
-            display: inline-block;
-            font-size: 16px;
-            margin: 4px 2px;
-            cursor: pointer;
-            border-radius: 12px;
-            font-weight: 600;
-            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-            transition: background-color 0.3s ease;
-        }
-
-        button:hover {
-            background-color: #2980b9;
-        }
-
-        .result-true {
-            color: green;
-            font-size: 24px;
-            font-weight: bold;
-        }
-
-        .result-false {
-            color: red;
-            font-size: 24px;
-            font-weight: bold;
-        }
-
-        .result-success {
-            color: blue;
-            font-size: 24px;
-            font-weight: bold;
-        }
+        /* ERROR & BUTTONS */
+        .inline-error { display: none; width: 100%; background-color: #fee2e2; color: #ef4444; border: 1px solid #fca5a5; padding: 10px; border-radius: 8px; font-size: 0.9rem; text-align: center; margin-bottom: 1rem; font-weight: 600; animation: fadeIn 0.3s ease-in-out; }
+        .inline-error.visible { display: block; }
+        .btn { background-color: var(--primary-color); color: white; border: none; padding: 12px 24px; font-size: 0.9rem; font-weight: 600; border-radius: var(--radius-md); cursor: pointer; transition: all 0.2s ease; width: 100%; }
+        .btn:hover { background-color: var(--primary-hover); transform: translateY(-2px); }
+        .btn-action { padding: 16px 32px; font-size: 1.1rem; background: #10b981; margin-top: 1rem; max-width: 300px; }
+        .btn-action:hover { background: #059669; }
+        .btn-secondary { background-color: #e2e8f0; color: #475569; padding: 8px 16px; width: auto; }
+        .btn-secondary:hover { background-color: #cbd5e1; }
+        #result-area { width: 100%; text-align: center; margin-top: 1rem; min-height: 50px; }
+        .status-message { font-size: 1.2rem; font-weight: 700; padding: 1rem 2rem; border-radius: var(--radius-md); display: inline-block; }
+        .result-success { background: #d1fae5; color: #065f46; border: 1px solid #10b981; }
+        .result-fail { background: #fee2e2; color: #991b1b; border: 1px solid #ef4444; }
+        .loader-container { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(255,255,255,0.8); backdrop-filter: blur(5px); display: none; justify-content: center; align-items: center; z-index: 2000; }
+        .loader { border: 4px solid #e2e8f0; border-top: 4px solid var(--primary-color); border-radius: 50%; width: 50px; height: 50px; animation: spin 1s linear infinite; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(-5px); } to { opacity: 1; transform: translateY(0); } }
+        @media (max-width: 768px) { .comparison-grid { grid-template-columns: 1fr; } }
     </style>
 </head>
 <body>
-    <div class="loading-container">
-        <h1>Захоплення та Верифікація Зображення</h1>
-        <button style="width: 15vw;" onclick="captureTestPhoto()">Захопити нове зображення</button>
-        <button style="width: 15vw;" onclick="verifyImage()">Перевірити зображення</button>
-        <!-- <a href="{% url 'faceAnalise' %}">
-            <button style="width: 15vw;">Аналізування облич</button>
-        </a> -->
-        <a href="{% url 'start' %}">
-            <button class="back-button">Назад</button>
-        </a>
-    
-        <p id="result"></p>
-        <div class="images-container">
-            <div id="test-photo-container" class="image-wrapper hidden">
-                <h2>Test Photo</h2>
-                <img id="test-photo" src="/static/testPhoto.jpg" alt="Test Photo">
+
+    <div class="main-container">
+        <div class="card">
+            <div class="card-header">
+                <div class="back-link-wrapper">
+                    <a href="{% url 'start' %}"><button class="btn btn-secondary">← Назад</button></a>
+                </div>
+                <h1 class="page-title">Верифікація Обличчя</h1>
+                <p>Етап 1: Встанови еталон. Етап 2: Пройди перевірку.</p>
             </div>
-            <div id="captured-photo-container" class="image-wrapper hidden">
-                <h2>Captured Photo</h2>
-                <img id="captured-photo" src="" alt="Captured Photo">
+
+            <div id="camera-container" class="camera-overlay-container">
+                <div class="camera-instruction" id="camera-instruction">Натисніть на відео, щоб зробити фото</div>
+                
+                <div class="camera-controls">
+                    <select id="camera-select" class="camera-select">
+                        <option value="" disabled selected>Завантаження камер...</option>
+                    </select>
+                </div>
+
+                <video id="video" autoplay playsinline></video>
+                <canvas id="canvas"></canvas>
             </div>
+
+            <div class="comparison-grid">
+                <div class="photo-column" id="col-ref">
+                    <div class="column-title">1. Еталонне фото</div>
+                    <div class="img-preview">
+                        <span id="icon-ref">👤</span>
+                        <img id="img-ref" src="" style="display:none;">
+                    </div>
+                    <div id="error-ref" class="inline-error"></div>
+                    <button class="btn" onclick="startCamera('reference')">📷 Зробити еталон</button>
+                </div>
+
+                <div class="photo-column" id="col-ver">
+                    <div class="column-title">2. Фото для перевірки</div>
+                    <div class="img-preview">
+                        <span id="icon-ver">🕵️</span>
+                        <img id="img-ver" src="" style="display:none;">
+                    </div>
+                    <div id="error-ver" class="inline-error"></div>
+                    <button class="btn" onclick="startCamera('verify')">📷 Зробити перевірку</button>
+                </div>
+            </div>
+
+            <button class="btn btn-action" onclick="runVerification()">✅ Порівняти фото</button>
+            <div id="result-area"></div>
         </div>
     </div>
-    
-    <div id="loader-container" class="loader-container">
-        <div class="loader"></div>
-    </div>
-    
+
+    <div id="loader-container" class="loader-container"><div class="loader"></div></div>
+
     <script>
-        function showLoader() {
-            document.getElementById('loader-container').style.display = 'flex';
-            document.getElementById('result').innerText = '';
-        }
+        const video = document.getElementById('video');
+        const canvas = document.getElementById('canvas');
+        const cameraContainer = document.getElementById('camera-container');
+        const instructionText = document.getElementById('camera-instruction');
+        const cameraSelect = document.getElementById('camera-select');
+        
+        let referenceImageData = null;
+        let verifyImageData = null;
+        let currentMode = null;
+        let stream = null;
 
-        function hideLoader() {
-            document.getElementById('loader-container').style.display = 'none';
-        }
+        // --- CAMERA DEVICES LOGIC ---
+        async function getVideoDevices() {
+            if (!navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) {
+                console.warn("enumerateDevices() not supported.");
+                return;
+            }
+            try {
+                const devices = await navigator.mediaDevices.enumerateDevices();
+                const videoDevices = devices.filter(device => device.kind === 'videoinput');
+                
+                cameraSelect.innerHTML = ''; // Clear existing
+                
+                if (videoDevices.length === 0) {
+                    const option = document.createElement('option');
+                    option.text = "Камеру не знайдено";
+                    cameraSelect.add(option);
+                    return;
+                }
 
-        function verifyImage() {
-            showLoader();
-
-            fetch('/verify-image/')
-                .then(response => response.json())
-                .then(data => {
-                    hideLoader();
-                    const resultElement = document.getElementById('result');
-                    if (data.verified !== undefined) {
-                        resultElement.innerText = "Is verified: " + data.verified;
-                        resultElement.className = data.verified ? 'result-true' : 'result-false';
-                        document.getElementById('captured-photo').src = "/static/captured_image.jpg?" + new Date().getTime();
-                        document.getElementById('captured-photo-container').classList.remove('hidden');
-                    } else {
-                        resultElement.innerText = "Error: " + data.error;
-                        resultElement.className = 'result-false';
-                    }
-                })
-                .catch(error => {
-                    hideLoader();
-                    const resultElement = document.getElementById('result');
-                    resultElement.innerText = "Error: " + error;
-                    resultElement.className = 'result-false';
+                videoDevices.forEach((device, index) => {
+                    const option = document.createElement('option');
+                    option.value = device.deviceId;
+                    option.text = device.label || `Камера ${index + 1}`;
+                    cameraSelect.appendChild(option);
                 });
+
+                // Listen for changes
+                cameraSelect.onchange = () => {
+                    if (stream) {
+                        // Restart camera with new device
+                        stopCameraOnly(); 
+                        startCameraStream(cameraSelect.value);
+                    }
+                };
+            } catch (err) {
+                console.error("Error listing devices:", err);
+            }
         }
 
-        function captureTestPhoto() {
-            showLoader();
+        // Call this once on load to populate list
+        getVideoDevices();
 
-            fetch('/capture-test-photo/')
-                .then(response => response.json())
-                .then(data => {
-                    hideLoader();
-                    const resultElement = document.getElementById('result');
-                    if (data.success) {
-                        resultElement.innerText = "New test photo captured successfully.";
-                        resultElement.className = 'result-success';
-                        document.getElementById('test-photo').src = "/static/testPhoto.jpg?" + new Date().getTime();
-                        document.getElementById('test-photo-container').classList.remove('hidden');
-                    } else {
-                        resultElement.innerText = "Error: " + data.error;
-                        resultElement.className = 'result-false';
+        // --- CAMERA LOGIC ---
+        async function startCamera(mode) {
+            currentMode = mode;
+            clearAllErrors();
+
+            cameraContainer.classList.add('visible');
+            document.getElementById('col-ref').classList.remove('active');
+            document.getElementById('col-ver').classList.remove('active');
+            
+            if (mode === 'reference') {
+                instructionText.innerText = "Фото для ЕТАЛОНУ (клікніть на відео)";
+                document.getElementById('col-ref').classList.add('active');
+            } else {
+                instructionText.innerText = "Фото для ПЕРЕВІРКИ (клікніть на відео)";
+                document.getElementById('col-ver').classList.add('active');
+            }
+            
+            // Start with currently selected camera or default
+            const deviceId = cameraSelect.value;
+            startCameraStream(deviceId);
+        }
+
+        async function startCameraStream(deviceId) {
+            // Stop previous stream if any
+            if (stream) {
+                stream.getTracks().forEach(track => track.stop());
+            }
+
+            const constraints = {
+                video: deviceId ? { deviceId: { exact: deviceId } } : { facingMode: "user" }
+            };
+
+            try {
+                stream = await navigator.mediaDevices.getUserMedia(constraints);
+                video.srcObject = stream;
+            } catch (err) {
+                alert("Не вдалося отримати доступ до камери. Перевірте дозволи.");
+                cameraContainer.classList.remove('visible');
+            }
+        }
+
+        function stopCameraOnly() {
+            if (stream) {
+                stream.getTracks().forEach(track => track.stop());
+                stream = null;
+            }
+        }
+
+        function stopCameraAndClose() {
+            stopCameraOnly();
+            cameraContainer.classList.remove('visible');
+            document.getElementById('col-ref').classList.remove('active');
+            document.getElementById('col-ver').classList.remove('active');
+        }
+
+        // Capture
+        video.addEventListener('click', function() {
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+            const dataUrl = canvas.toDataURL('image/jpeg');
+            
+            if (currentMode === 'reference') {
+                referenceImageData = dataUrl;
+                showImage('ref', dataUrl);
+                uploadReferencePhoto(dataUrl);
+            } else if (currentMode === 'verify') {
+                verifyImageData = dataUrl;
+                showImage('ver', dataUrl);
+            }
+            stopCameraAndClose();
+        });
+
+        function showImage(type, src) {
+            document.getElementById(`icon-${type}`).style.display = 'none';
+            const img = document.getElementById(`img-${type}`);
+            img.src = src; img.style.display = 'block';
+        }
+
+        // --- ERROR HANDLING ---
+        function showError(elementId, message) {
+            const el = document.getElementById(elementId);
+            el.innerText = message;
+            el.classList.add('visible');
+        }
+        function clearError(elementId) {
+            const el = document.getElementById(elementId);
+            el.classList.remove('visible');
+            el.innerText = '';
+        }
+        function clearAllErrors() {
+            clearError('error-ref');
+            clearError('error-ver');
+            document.getElementById('result-area').innerHTML = '';
+        }
+
+        // --- BACKEND ---
+        function getCookie(name) {
+            let cookieValue = null;
+            if (document.cookie && document.cookie !== '') {
+                const cookies = document.cookie.split(';');
+                for (let i = 0; i < cookies.length; i++) {
+                    const cookie = cookies[i].trim();
+                    if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                        cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                        break;
                     }
-                })
-                .catch(error => {
-                    hideLoader();
-                    const resultElement = document.getElementById('result');
-                    resultElement.innerText = "Error: " + error;
-                    resultElement.className = 'result-false';
-                });
+                }
+            }
+            return cookieValue;
+        }
+        function showLoader() { document.getElementById('loader-container').style.display = 'flex'; }
+        function hideLoader() { document.getElementById('loader-container').style.display = 'none'; }
+
+        function uploadReferencePhoto(dataUrl) {
+            showLoader();
+            const formData = new FormData();
+            formData.append('image_data', dataUrl);
+            fetch('/capture-test-photo/', { method: 'POST', body: formData, headers: { 'X-CSRFToken': getCookie('csrftoken') } })
+            .then(res => res.json())
+            .then(data => {
+                hideLoader();
+                if(!data.success) {
+                    if (data.error === 'no_face_detected') {
+                        showError('error-ref', "Обличчя не знайдено! Перезніміть.");
+                        document.getElementById('img-ref').style.display = 'none';
+                        document.getElementById('icon-ref').style.display = 'block';
+                        referenceImageData = null;
+                    } else {
+                        showError('error-ref', "Помилка: " + (data.message || data.error));
+                    }
+                }
+            })
+            .catch(err => { hideLoader(); showError('error-ref', "Помилка мережі"); });
+        }
+
+        function runVerification() {
+            clearError('error-ver');
+            if (!verifyImageData) { showError('error-ver', "Спочатку зробіть фото!"); return; }
+            showLoader();
+            const resArea = document.getElementById('result-area');
+            resArea.innerHTML = '';
+            const formData = new FormData();
+            formData.append('image_data', verifyImageData);
+            fetch('/verify-image/', { method: 'POST', body: formData, headers: { 'X-CSRFToken': getCookie('csrftoken') } })
+            .then(res => res.json())
+            .then(data => {
+                hideLoader();
+                if (data.error === 'no_face_detected') { showError('error-ver', "Обличчя не знайдено! Перезніміть."); return; }
+                if (data.error) {
+                    if (data.error === 'no_reference') { showError('error-ref', data.message); }
+                    else { resArea.innerHTML = `<div class="status-message result-fail">Error: ${data.message || data.error}</div>`; }
+                    return;
+                }
+                if (data.verified !== undefined) {
+                    const isVerified = data.verified;
+                    const cssClass = isVerified ? 'result-success' : 'result-fail';
+                    const text = isVerified ? 'ВЕРИФІКАЦІЮ ПРОЙДЕНО ✅' : 'ВЕРИФІКАЦІЮ НЕ ПРОЙДЕНО ❌';
+                    resArea.innerHTML = `<div class="status-message ${cssClass}"><div>${text}</div><div style="font-size: 0.8rem; margin-top:5px; opacity: 0.8">Distance: ${data.distance.toFixed(4)}</div></div>`;
+                }
+            })
+            .catch(err => { hideLoader(); resArea.innerHTML = `<div class="status-message result-fail">Network Error</div>`; });
         }
     </script>
 </body>

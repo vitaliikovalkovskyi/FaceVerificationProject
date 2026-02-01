@@ -1,0 +1,351 @@
+<!DOCTYPE html>
+<html lang="uk">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FaceVerificationProject</title>
+    {% load static %}
+    <link rel="icon" type="image/png" href="{% static 'logo.jpg' %}">
+
+    <style>
+        /* --- 1. CONFIGURATION & VARIABLES --- */
+        :root {
+            /* Palette */
+            --primary-color: #4f46e5;       /* Indigo for primary actions */
+            --primary-hover: #4338ca;
+            --secondary-color: #64748b;     /* Slate for text */
+            --bg-gradient-start: #f8fafc;
+            --bg-gradient-end: #e2e8f0;
+            --card-bg: #ffffff;
+            
+            /* Status Colors */
+            --success-color: #10b981;
+            --error-color: #ef4444;
+
+            /* Spacing & Radius */
+            --radius-lg: 20px;
+            --radius-md: 12px;
+            --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+            --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+        }
+
+        @import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;700&display=swap');
+
+        /* --- 2. GLOBAL RESET --- */
+        body {
+            font-family: 'Montserrat', sans-serif;
+            background: linear-gradient(135deg, var(--bg-gradient-start) 0%, var(--bg-gradient-end) 100%);
+            color: #1e293b;
+            margin: 0;
+            padding: 0;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+        }
+
+        h1, h2, h3 { margin: 0; font-weight: 700; color: #0f172a; }
+        p { color: var(--secondary-color); }
+        a { text-decoration: none; }
+
+        /* --- 3. LAYOUT --- */
+        .main-container {
+            width: 100%;
+            max-width: 1200px;
+            padding: 2rem;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 3rem;
+        }
+
+        .header-title {
+            font-size: 2.5rem;
+            text-align: center;
+            background: -webkit-linear-gradient(45deg, #4f46e5, #ec4899);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-bottom: 1rem;
+        }
+
+        .cards-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+            gap: 2rem;
+            width: 100%;
+            justify-content: center;
+        }
+
+        /* --- 4. CARDS --- */
+        .card {
+            background: var(--card-bg);
+            border-radius: var(--radius-lg);
+            padding: 2.5rem;
+            box-shadow: var(--shadow-lg);
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            align-items: center;
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+        }
+
+        /* Decorative top border for cards */
+        .card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 6px;
+            background: linear-gradient(90deg, var(--primary-color), #818cf8);
+        }
+
+        .card h2 {
+            margin-bottom: 2rem;
+            font-size: 1.5rem;
+            text-align: center;
+        }
+
+        .card-actions {
+            width: 100%;
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+        }
+
+        /* --- 5. BUTTONS --- */
+        .btn {
+            background-color: var(--primary-color);
+            color: white;
+            border: none;
+            padding: 16px 24px;
+            font-size: 1rem;
+            font-weight: 600;
+            border-radius: var(--radius-md);
+            cursor: pointer;
+            width: 100%;
+            transition: all 0.2s ease;
+            box-shadow: 0 4px 6px rgba(79, 70, 229, 0.2);
+            text-align: center;
+            display: inline-block;
+            box-sizing: border-box;
+        }
+
+        .btn:hover {
+            background-color: var(--primary-hover);
+            transform: translateY(-2px);
+            box-shadow: 0 6px 8px rgba(79, 70, 229, 0.3);
+        }
+
+        .btn:active {
+            transform: translateY(0);
+        }
+
+        /* --- 6. RESULTS & IMAGES --- */
+        .results-area {
+            text-align: center;
+            margin-top: 2rem;
+            width: 100%;
+        }
+
+        .images-container {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            gap: 2rem;
+            margin-top: 2rem;
+        }
+
+        .image-wrapper {
+            background: white;
+            padding: 10px;
+            border-radius: var(--radius-md);
+            box-shadow: var(--shadow-md);
+        }
+
+        .image-wrapper h2 {
+            font-size: 1rem;
+            margin-bottom: 10px;
+            color: var(--secondary-color);
+        }
+
+        img {
+            max-width: 100%;
+            width: 300px;
+            height: auto;
+            border-radius: 8px;
+            display: block;
+        }
+
+        .hidden { display: none !important; }
+
+        .status-message {
+            font-size: 1.25rem;
+            font-weight: 600;
+            padding: 1rem;
+            border-radius: var(--radius-md);
+            margin-top: 1rem;
+            display: inline-block;
+        }
+
+        .result-true, .result-success { color: var(--success-color); background: rgba(16, 185, 129, 0.1); }
+        .result-false { color: var(--error-color); background: rgba(239, 68, 68, 0.1); }
+
+        /* --- 7. LOADER --- */
+        .loader-container {
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background-color: rgba(255, 255, 255, 0.7);
+            backdrop-filter: blur(5px);
+            display: none;
+            justify-content: center;
+            align-items: center;
+            z-index: 2000;
+        }
+
+        .loader {
+            border: 4px solid #e2e8f0;
+            border-radius: 50%;
+            border-top: 4px solid var(--primary-color);
+            width: 60px;
+            height: 60px;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="main-container">
+        
+        <h1 class="header-title">FaceVerificationProject</h1>
+
+        <div class="cards-grid">
+            <div class="card">
+                <h2>Магістерська робота</h2>
+                <div class="card-actions">
+                    <a href="{% url 'magisterjob' %}" style="width: 100%;">
+                        <button class="btn">
+                            *КЛІК*
+                        </button>
+                    </a>
+                </div>
+            </div>
+
+            <div class="card">
+                <h2>Бакалаврська робота</h2>
+                <div class="card-actions">
+                    <a href="{% url 'home' %}" style="width: 100%;">
+                        <button class="btn">
+                            Біометрична аутентифікація за обличчям
+                        </button>
+                    </a>
+                    <a href="{% url 'faceAnalise' %}" style="width: 100%;">
+                        <button class="btn">
+                            Аналізування облич
+                        </button>
+                    </a>
+                </div>
+            </div>
+        </div>
+
+        <div class="results-area">
+            <p id="result" class="status-message"></p>
+            
+            <div class="images-container">
+                <div id="test-photo-container" class="image-wrapper hidden">
+                    <h2>Test Photo</h2>
+                    <img id="test-photo" src="/static/testPhoto.jpg" alt="Test Photo">
+                </div>
+                <div id="captured-photo-container" class="image-wrapper hidden">
+                    <h2>Captured Photo</h2>
+                    <img id="captured-photo" src="" alt="Captured Photo">
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="loader-container" class="loader-container">
+        <div class="loader"></div>
+    </div>
+
+    <script>
+        function showLoader() {
+            document.getElementById('loader-container').style.display = 'flex';
+            const resEl = document.getElementById('result');
+            resEl.innerText = '';
+            resEl.className = 'status-message'; // reset class
+        }
+
+        function hideLoader() {
+            document.getElementById('loader-container').style.display = 'none';
+        }
+
+        function verifyImage() {
+            showLoader();
+            fetch('/verify-image/')
+                .then(response => response.json())
+                .then(data => {
+                    hideLoader();
+                    const resultElement = document.getElementById('result');
+                    if (data.verified !== undefined) {
+                        resultElement.innerText = "Is verified: " + data.verified;
+                        resultElement.className = 'status-message ' + (data.verified ? 'result-true' : 'result-false');
+                        
+                        document.getElementById('captured-photo').src = "/static/captured_image.jpg?" + new Date().getTime();
+                        document.getElementById('captured-photo-container').classList.remove('hidden');
+                    } else {
+                        resultElement.innerText = "Error: " + data.error;
+                        resultElement.className = 'status-message result-false';
+                    }
+                })
+                .catch(error => {
+                    hideLoader();
+                    const resultElement = document.getElementById('result');
+                    resultElement.innerText = "Error: " + error;
+                    resultElement.className = 'status-message result-false';
+                });
+        }
+
+        function captureTestPhoto() {
+            showLoader();
+            fetch('/capture-test-photo/')
+                .then(response => response.json())
+                .then(data => {
+                    hideLoader();
+                    const resultElement = document.getElementById('result');
+                    if (data.success) {
+                        resultElement.innerText = "New test photo captured successfully.";
+                        resultElement.className = 'status-message result-success';
+                        
+                        document.getElementById('test-photo').src = "/static/testPhoto.jpg?" + new Date().getTime();
+                        document.getElementById('test-photo-container').classList.remove('hidden');
+                    } else {
+                        resultElement.innerText = "Error: " + data.error;
+                        resultElement.className = 'status-message result-false';
+                    }
+                })
+                .catch(error => {
+                    hideLoader();
+                    const resultElement = document.getElementById('result');
+                    resultElement.innerText = "Error: " + error;
+                    resultElement.className = 'status-message result-false';
+                });
+        }
+    </script>
+</body>
+</html>
