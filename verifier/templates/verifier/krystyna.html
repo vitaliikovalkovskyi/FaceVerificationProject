@@ -1,4 +1,5 @@
 <!DOCTYPE html>
+{% load static %}
 <html lang="uk">
 <head>
     <meta charset="UTF-8">
@@ -129,7 +130,7 @@
             <span class="close-btn" onclick="closeEasterEgg()">&times;</span>
             
             <h2>Христина Шмигельська</h2>
-            <img src="/media/krystyna_photo.jpg" alt="Krystyna Shmygelska" class="easter-egg-photo">
+            <img src="{% static 'krystyna_photo.jpg' %}" alt="Krystyna Shmygelska" class="easter-egg-photo">
             
             <p class="hint-text">Ви знайшли секретний розділ!</p>
         </div>
