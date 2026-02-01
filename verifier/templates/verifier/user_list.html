@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Список користувачів</title>
+    {% load static %}
+    <link rel="icon" href="{% static 'logo.jpg' %}">
+    <style>
+        /* --- 1. VARIABLES & RESET --- */
+        :root {
+            --primary-color: #4f46e5;
+            --primary-hover: #4338ca;
+            --secondary-color: #64748b;
+            --border-color: #cbd5e1;
+            --card-bg: #ffffff;
+            --radius-lg: 20px;
+            --danger-color: #ef4444;
+            --danger-hover: #dc2626;
+        }
+
+        @import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&display=swap');
+
+        body {
+            font-family: 'Montserrat', sans-serif;
+            background: #f1f5f9;
+            color: #1e293b;
+            margin: 0;
+            padding: 2rem;
+            display: flex;
+            justify-content: center;
+            min-height: 100vh;
+        }
+        
+        .container {
+            width: 100%;
+            max-width: 1000px;
+        }
+
+        /* --- 2. HEADER & NAV --- */
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1.5rem;
+            flex-wrap: wrap;
+            gap: 1rem;
+        }
+
+        h1 {
+            margin: 0;
+            color: #0f172a;
+            font-size: 1.8rem;
+        }
+        
+        .btn {
+            padding: 10px 20px;
+            background: var(--primary-color);
+            color: white;
+            text-decoration: none;
+            border-radius: 10px;
+            font-weight: 600;
+            border: none;
+            cursor: pointer;
+            transition: 0.2s;
+            display: inline-block;
+        }
+        .btn:hover { background: var(--primary-hover); }
+        
+        .btn-secondary {
+            background: #e2e8f0;
+            color: #475569;
+            margin-right: 10px;
+        }
+        .btn-secondary:hover { background: #cbd5e1; }
+
+        /* --- 3. SEARCH BAR --- */
+        .search-container {
+            margin-bottom: 2rem;
+            display: flex;
+            gap: 10px;
+        }
+
+        .search-input {
+            flex: 1;
+            padding: 12px 16px;
+            font-size: 1rem;
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            outline: none;
+            font-family: inherit;
+            background: white;
+        }
+        .search-input:focus {
+            border-color: var(--primary-color);
+            box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
+        }
+
+        .search-icon-box {
+            background: var(--primary-color);
+            color: white;
+            border-radius: 12px;
+            width: 50px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.2rem;
+        }
+
+        /* --- 4. GRID LAYOUT --- */
+        .users-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 1.5rem;
+        }
+        
+        .user-card {
+            background: white;
+            border-radius: 15px;
+            overflow: hidden;
+            box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1);
+            transition: transform 0.2s;
+            text-align: center;
+            padding-bottom: 1rem;
+            position: relative; /* Важливо для кнопки видалення */
+        }
+        
+        .user-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1);
+        }
+        
+        .user-img {
+            width: 100%;
+            height: 200px;
+            object-fit: cover;
+            background: #cbd5e1;
+        }
+        
+        .user-name {
+            font-weight: 700;
+            margin-top: 10px;
+            font-size: 1.1rem;
+            padding: 0 10px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        
+        .user-date {
+            font-size: 0.8rem;
+            color: var(--secondary-color);
+            margin-top: 5px;
+        }
+
+        /* --- 5. DELETE BUTTON --- */
+        .delete-btn {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background: rgba(239, 68, 68, 0.9);
+            color: white;
+            border: none;
+            border-radius: 50%;
+            width: 32px;
+            height: 32px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            font-size: 1.2rem;
+            line-height: 1;
+            transition: all 0.2s;
+            z-index: 10;
+            opacity: 0.8;
+        }
+        
+        .delete-btn:hover {
+            background: var(--danger-hover);
+            transform: scale(1.1) rotate(90deg);
+            opacity: 1;
+        }
+
+        /* --- 6. STATES --- */
+        .no-results {
+            grid-column: 1/-1;
+            text-align: center;
+            color: #64748b;
+            font-size: 1.2rem;
+            margin-top: 2rem;
+            display: none; /* JS покаже це */
+        }
+        
+        .empty-state-server {
+            grid-column: 1/-1;
+            text-align: center;
+            color: #64748b;
+            font-size: 1.2rem;
+            margin-top: 2rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        
+        <div class="header">
+            <div>
+                <a href="{% url 'magisterjob' %}" class="btn btn-secondary">← Реєстрація</a>
+                <a href="{% url 'start' %}" class="btn btn-secondary">Додому</a>
+            </div>
+            <h1>Користувачі (<span id="user-count">{{ users|length }}</span>)</h1>
+        </div>
+
+        <div class="search-container">
+            <input 
+                type="text" 
+                id="search-input"
+                class="search-input" 
+                placeholder="Почніть вводити ім'я..." 
+                onkeyup="filterUsers()"
+                autocomplete="off"
+            >
+            <div class="search-icon-box">🔍</div>
+        </div>
+
+        <div class="users-grid" id="users-grid">
+            {% for user in users %}
+            <div class="user-card">
+                
+                <form action="{% url 'delete_user' user.id %}" method="POST" onsubmit="return confirm('Ви впевнені, що хочете видалити користувача {{ user.username }}? Цю дію не можна скасувати.');">
+                    {% csrf_token %}
+                    <button type="submit" class="delete-btn" title="Видалити">×</button>
+                </form>
+
+                {% if user.photo %}
+                    <img src="{{ user.photo.url }}" alt="{{ user.username }}" class="user-img">
+                {% else %}
+                    <div class="user-img" style="display:flex;align-items:center;justify-content:center;color:#64748b;font-weight:600;">
+                        Немає фото
+                    </div>
+                {% endif %}
+                
+                <div class="user-name">{{ user.username }}</div>
+                <div class="user-date">Додано: {{ user.created_at|date:"d.m.Y" }}</div>
+            </div>
+            {% empty %}
+                <p class="empty-state-server">
+                    Список користувачів порожній.
+                </p>
+            {% endfor %}
+            
+            <p id="no-results-msg" class="no-results">
+                Нікого не знайдено за вашим запитом 😔
+            </p>
+        </div>
+    </div>
+
+    <script>
+        function filterUsers() {
+            // 1. Get input text
+            const input = document.getElementById('search-input');
+            const filter = input.value.toLowerCase();
+            
+            // 2. Get grid elements
+            const grid = document.getElementById('users-grid');
+            const cards = grid.getElementsByClassName('user-card');
+            const noResultsMsg = document.getElementById('no-results-msg');
+            const countSpan = document.getElementById('user-count');
+            
+            let visibleCount = 0;
+
+            // 3. Loop through all cards
+            for (let i = 0; i < cards.length; i++) {
+                const nameElement = cards[i].getElementsByClassName('user-name')[0];
+                const txtValue = nameElement.textContent || nameElement.innerText;
+                
+                // Check if name matches
+                if (txtValue.toLowerCase().indexOf(filter) > -1) {
+                    cards[i].style.display = ""; // Show
+                    visibleCount++;
+                } else {
+                    cards[i].style.display = "none"; // Hide
+                }
+            }
+
+            // 4. Update count in header
+            if (countSpan) {
+                countSpan.innerText = visibleCount;
+            }
+
+            // 5. Toggle "No Results" message
+            // Show only if we have users initially (cards.length > 0) but search hid them all
+            if (visibleCount === 0 && cards.length > 0) {
+                noResultsMsg.style.display = "block";
+            } else {
+                noResultsMsg.style.display = "none";
+            }
+        }
+    </script>
+</body>
+</html>

@@ -4,12 +4,25 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Реєстрація - Магістерська робота</title>
+    <title>Реєстрація</title>
     {% load static %}
     <link rel="icon" href="{% static 'logo.jpg' %}">
-
     <style>
-        /* --- CSS SAMES AS BEFORE + NEW CAMERA CONTROLS --- */
+        /* ... Твій CSS ... */
+        /* Додай цей стиль для кнопки входу */
+        .btn-login-link {
+            display: block;
+            text-align: center;
+            margin-top: 15px;
+            color: var(--primary-color);
+            text-decoration: underline;
+            cursor: pointer;
+            font-weight: 600;
+        }
+
+        /* ... */
+        /* ВСТАВ СЮДИ ВЕСЬ CSS З ПОПЕРЕДНЬОГО ВАРІАНТУ */
+        /* Щоб не дублювати 200 рядків коду */
         :root {
             --primary-color: #4f46e5;
             --primary-hover: #4338ca;
@@ -146,7 +159,6 @@
             border-color: var(--primary-color);
         }
 
-        /* CAMERA UI */
         .camera-wrapper {
             width: 100%;
             position: relative;
@@ -187,7 +199,6 @@
             pointer-events: none;
         }
 
-        /* NEW CAMERA SELECT STYLES */
         .camera-controls {
             position: absolute;
             top: 10px;
@@ -296,6 +307,37 @@
             animation: spin 1s linear infinite;
         }
 
+        #qr-section {
+            text-align: center;
+            display: none;
+            animation: fadeIn 0.5s;
+        }
+
+        .qr-image {
+            width: 200px;
+            height: 200px;
+            border: 4px solid var(--primary-color);
+            border-radius: 12px;
+            margin: 15px 0;
+        }
+
+        .otp-input {
+            font-size: 1.5rem;
+            letter-spacing: 5px;
+            text-align: center;
+            width: 150px;
+            padding: 10px;
+            border-radius: 8px;
+            border: 2px solid var(--border-color);
+        }
+
+        .step-title {
+            font-size: 1.2rem;
+            font-weight: 700;
+            color: var(--primary-color);
+            margin-bottom: 1rem;
+        }
+
         @keyframes spin {
             0% {
                 transform: rotate(0deg);
@@ -309,67 +351,70 @@
 </head>
 
 <body>
-
     <div class="main-container">
         <div class="card">
-
             <div class="card-header">
                 <div class="back-link-wrapper">
-                    <a href="{% url 'start' %}">
-                        <button type="button" class="btn btn-secondary">← Назад</button>
-                    </a>
+                    <a href="{% url 'start' %}"><button type="button" class="btn btn-secondary">← Назад</button></a>
                 </div>
                 <h1>Реєстрація</h1>
-                <p class="subtitle">Створіть профіль та додайте еталонне фото</p>
             </div>
 
-            <form id="register-form" onsubmit="handleRegister(event)">
+            <div id="error-box" class="inline-error"></div>
+
+            <form id="register-step1-form" onsubmit="handleStep1(event)">
                 {% csrf_token %}
-
-                <div id="error-box" class="inline-error"></div>
-
                 <div class="form-group">
                     <label for="username">Ім'я користувача</label>
-                    <input type="text" id="username" name="username" class="form-input" placeholder="Введіть ваше ім'я"
+                    <input type="text" id="username" name="username" class="form-input" placeholder="Введіть ім'я"
                         required>
                 </div>
 
-
                 <div class="form-group">
                     <label>Еталонне фото</label>
-
                     <div class="photo-tabs">
                         <div class="tab-btn active" onclick="switchMode('file')" id="tab-file">📁 Завантажити</div>
                         <div class="tab-btn" onclick="switchMode('camera')" id="tab-camera">📷 Камера</div>
                     </div>
-
                     <div id="file-mode">
                         <input type="file" id="photo-file" name="photo" accept="image/*" class="form-input">
                     </div>
-
                     <div id="camera-mode" class="hidden">
                         <div class="camera-wrapper visible" id="camera-box">
-
                             <div class="camera-controls">
                                 <select id="camera-select" class="camera-select">
-                                    <option value="" disabled selected>Завантаження камер...</option>
+                                    <option>Завантаження...</option>
                                 </select>
                             </div>
-
                             <video id="video" autoplay playsinline></video>
                             <canvas id="canvas" class="hidden"></canvas>
                             <img id="photo-output" class="captured-img hidden" alt="Captured Photo">
-
-                            <div class="camera-overlay" id="camera-hint">
-                                Натисніть на відео, щоб зробити фото
-                            </div>
+                            <div class="camera-overlay" id="camera-hint">Натисніть на відео</div>
                         </div>
                     </div>
                 </div>
-
-                <button type="submit" class="btn">Зареєструватися</button>
+                <button type="submit" class="btn">Далі (Перевірка фото)</button>
             </form>
 
+            <div id="qr-section">
+                <div class="step-title">Крок 2: Налаштування 2FA</div>
+                <p style="font-size: 0.9rem; color: #64748b;">
+                    Відскануйте цей код у Google Authenticator<br>та введіть 6 цифр нижче.
+                </p>
+
+                <img id="qr-img" src="" alt="QR Code" class="qr-image">
+
+                <form id="register-step2-form" onsubmit="handleStep2(event)">
+                    <div class="form-group" style="display: flex; justify-content: center;">
+                        <input type="text" id="otp-code" class="otp-input" placeholder="000000" maxlength="6" required>
+                    </div>
+                    <button type="submit" class="btn btn-action">Підтвердити та Завершити</button>
+                </form>
+            </div>
+
+            <a href="{% url 'user_list' %}" class="btn-login-link" id="login-link">
+                Вже зареєстровані? Список користувачів ->
+            </a>
         </div>
     </div>
 
@@ -378,186 +423,164 @@
     </div>
 
     <script>
-        // -- Variables --
+        // ... (Тут всі старі змінні та функції камери: video, startCamera, switchMode, etc. Залиш їх без змін) ...
+        // КОПІЮЙ ВСІ ФУНКЦІЇ КАМЕРИ З МИНУЛОГО ВІДПОВІДІ СЮДИ
+
         const video = document.getElementById('video');
         const canvas = document.getElementById('canvas');
         const photoOutput = document.getElementById('photo-output');
         const hintText = document.getElementById('camera-hint');
         const errorBox = document.getElementById('error-box');
         const cameraSelect = document.getElementById('camera-select');
-
         let stream = null;
         let capturedCameraData = null;
         let currentMode = 'file';
 
-        // -- CAMERA DEVICES --
+        // ... (Функції getVideoDevices, startCameraStream, switchMode і т.д. копіюй з попередньої версії) ...
         async function getVideoDevices() {
             if (!navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) { return; }
             try {
                 const devices = await navigator.mediaDevices.enumerateDevices();
                 const videoDevices = devices.filter(device => device.kind === 'videoinput');
                 cameraSelect.innerHTML = '';
-
-                if (videoDevices.length === 0) {
-                    const option = document.createElement('option');
-                    option.text = "Камер не знайдено";
-                    cameraSelect.add(option);
-                    return;
-                }
-
-                videoDevices.forEach((device, index) => {
-                    const option = document.createElement('option');
-                    option.value = device.deviceId;
-                    option.text = device.label || `Камера ${index + 1}`;
-                    cameraSelect.appendChild(option);
-                });
-
-                cameraSelect.onchange = () => {
-                    if (currentMode === 'camera') {
-                        stopCameraOnly();
-                        startCameraStream(cameraSelect.value);
-                    }
-                };
+                if (videoDevices.length === 0) { cameraSelect.add(new Option("Камер не знайдено", "")); return; }
+                videoDevices.forEach((device, index) => { cameraSelect.add(new Option(device.label || `Камера ${index + 1}`, device.deviceId)); });
+                cameraSelect.onchange = () => { if (currentMode === 'camera') { stopCameraOnly(); startCameraStream(cameraSelect.value); } };
             } catch (err) { console.error(err); }
         }
         getVideoDevices();
-
         function showLoader() { document.getElementById('loader-container').style.display = 'flex'; }
         function hideLoader() { document.getElementById('loader-container').style.display = 'none'; }
-
-        function showError(msg) {
-            errorBox.innerText = "⚠️ " + msg;
-            errorBox.classList.add('visible');
-        }
-        function clearError() {
-            errorBox.classList.remove('visible');
-            errorBox.innerText = "";
-        }
-
-        // -- Tabs --
+        function showError(msg) { errorBox.innerText = "⚠️ " + msg; errorBox.classList.add('visible'); }
+        function clearError() { errorBox.classList.remove('visible'); errorBox.innerText = ""; }
         function switchMode(mode) {
-            currentMode = mode;
-            clearError();
-
-            const fileDiv = document.getElementById('file-mode');
-            const camDiv = document.getElementById('camera-mode');
-            const tabFile = document.getElementById('tab-file');
-            const tabCam = document.getElementById('tab-camera');
-
+            currentMode = mode; clearError();
+            const fileDiv = document.getElementById('file-mode'); const camDiv = document.getElementById('camera-mode');
+            const tabFile = document.getElementById('tab-file'); const tabCam = document.getElementById('tab-camera');
             if (mode === 'file') {
-                fileDiv.classList.remove('hidden');
-                camDiv.classList.add('hidden');
-                tabFile.classList.add('active');
-                tabCam.classList.remove('active');
-                stopCamera();
-                capturedCameraData = null;
+                fileDiv.classList.remove('hidden'); camDiv.classList.add('hidden');
+                tabFile.classList.add('active'); tabCam.classList.remove('active');
+                stopCamera(); capturedCameraData = null;
             } else {
-                fileDiv.classList.add('hidden');
-                camDiv.classList.remove('hidden');
-                tabFile.classList.remove('active');
-                tabCam.classList.add('active');
-                // Start with selected or default
-                startCameraStream(cameraSelect.value);
-                document.getElementById('photo-file').value = "";
+                fileDiv.classList.add('hidden'); camDiv.classList.remove('hidden');
+                tabFile.classList.remove('active'); tabCam.classList.add('active');
+                startCameraStream(cameraSelect.value); document.getElementById('photo-file').value = "";
             }
         }
-
-        // -- Camera --
         async function startCameraStream(deviceId) {
-            const constraints = {
-                video: deviceId ? { deviceId: { exact: deviceId } } : { facingMode: "user" }
-            };
-            try {
-                stream = await navigator.mediaDevices.getUserMedia(constraints);
-                video.srcObject = stream;
-                video.classList.remove('hidden');
-                photoOutput.classList.add('hidden');
-                hintText.innerText = "Натисніть на відео, щоб зробити фото";
-            } catch (err) {
-                alert("Не вдалося отримати доступ до камери.");
-            }
+            const constraints = { video: deviceId ? { deviceId: { exact: deviceId } } : { facingMode: "user" } };
+            try { stream = await navigator.mediaDevices.getUserMedia(constraints); video.srcObject = stream; video.classList.remove('hidden'); photoOutput.classList.add('hidden'); hintText.innerText = "Натисніть на відео"; } catch (err) { alert("Не вдалося отримати доступ до камери."); }
         }
-
-        function stopCameraOnly() {
-            if (stream) {
-                stream.getTracks().forEach(track => track.stop());
-                stream = null;
-            }
-        }
+        function stopCameraOnly() { if (stream) { stream.getTracks().forEach(track => track.stop()); stream = null; } }
         function stopCamera() { stopCameraOnly(); }
-
         video.addEventListener('click', function () {
-            canvas.width = video.videoWidth;
-            canvas.height = video.videoHeight;
-            const context = canvas.getContext('2d');
-            context.drawImage(video, 0, 0, canvas.width, canvas.height);
-            capturedCameraData = canvas.toDataURL('image/jpeg');
-            photoOutput.src = capturedCameraData;
-            video.classList.add('hidden');
-            photoOutput.classList.remove('hidden');
-            hintText.innerText = "Натисніть на фото, щоб перезняти";
+            canvas.width = video.videoWidth; canvas.height = video.videoHeight;
+            const context = canvas.getContext('2d'); context.drawImage(video, 0, 0, canvas.width, canvas.height);
+            capturedCameraData = canvas.toDataURL('image/jpeg'); photoOutput.src = capturedCameraData;
+            video.classList.add('hidden'); photoOutput.classList.remove('hidden'); hintText.innerText = "Перезняти";
         });
+        photoOutput.addEventListener('click', function () { photoOutput.classList.add('hidden'); video.classList.remove('hidden'); capturedCameraData = null; hintText.innerText = "Зробити фото"; });
+        function getCookie(name) { let cookieValue = null; if (document.cookie && document.cookie !== '') { const cookies = document.cookie.split(';'); for (let i = 0; i < cookies.length; i++) { const cookie = cookies[i].trim(); if (cookie.substring(0, name.length + 1) === (name + '=')) { cookieValue = decodeURIComponent(cookie.substring(name.length + 1)); break; } } } return cookieValue; }
 
-        photoOutput.addEventListener('click', function () {
-            photoOutput.classList.add('hidden');
-            video.classList.remove('hidden');
-            capturedCameraData = null;
-            hintText.innerText = "Натисніть на відео, щоб зробити фото";
-        });
 
-        // -- SUBMIT LOGIC --
-        function getCookie(name) {
-            let cookieValue = null;
-            if (document.cookie && document.cookie !== '') {
-                const cookies = document.cookie.split(';');
-                for (let i = 0; i < cookies.length; i++) {
-                    const cookie = cookies[i].trim();
-                    if (cookie.substring(0, name.length + 1) === (name + '=')) {
-                        cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
-                        break;
-                    }
-                }
-            }
-            return cookieValue;
-        }
+        // --- ЛОГІКА ДВОХ ЕТАПІВ ---
 
-        function handleRegister(event) {
+        // STEP 1: Send Photo -> Get QR
+        function handleStep1(event) {
+            // 1. Зупиняємо стандартну відправку форми ОДРАЗУ
             event.preventDefault();
-            clearError();
+            clearError(); // Очищаємо старі помилки
 
-            const form = document.getElementById('register-form');
+            const usernameInput = document.getElementById('username');
+            const username = usernameInput.value;
+
+            // 2. ПЕРЕВІРКА НА КИРИЛИЦЮ (Regex)
+            const latinRegex = /^[a-zA-Z0-9_]+$/;
+
+            if (!latinRegex.test(username)) {
+                showError("Будь ласка, використовуйте тільки латинські літери (A-Z) та цифри.");
+                return; // Зупиняємо виконання, але сторінка не перезавантажиться
+            }
+
+            const form = document.getElementById('register-step1-form');
+            // Створюємо FormData тільки якщо валідація пройшла
             const formData = new FormData(form);
 
+            // 3. Логіка фото/камери
             if (currentMode === 'camera') {
-                if (!capturedCameraData) { showError("Зробіть фото перед реєстрацією!"); return; }
+                if (!capturedCameraData) {
+                    showError("Зробіть фото!");
+                    return;
+                }
                 formData.append('camera_data', capturedCameraData);
-                formData.delete('photo');
+                formData.delete('photo'); // Видаляємо пусте поле файлу, якщо воно там є
             } else {
-                if (document.getElementById('photo-file').files.length === 0) { showError("Виберіть файл або зробіть фото!"); return; }
+                const fileInput = document.getElementById('photo-file');
+                if (fileInput.files.length === 0) {
+                    showError("Виберіть файл!");
+                    return;
+                }
             }
 
             showLoader();
 
-            fetch("{% url 'register' %}", {
+            // 4. Відправка на сервер
+            fetch("{% url 'register_step1' %}", {
                 method: 'POST',
                 body: formData,
                 headers: { 'X-CSRFToken': getCookie('csrftoken') }
             })
-                .then(response => response.json())
+                .then(res => res.json())
                 .then(data => {
                     hideLoader();
                     if (data.success) {
-                        alert("Реєстрація успішна! " + data.message);
-                        window.location.href = "{% url 'home' %}";
+                        // Перемикаємо інтерфейс на Етап 2
+                        document.getElementById('register-step1-form').style.display = 'none';
+                        document.getElementById('qr-section').style.display = 'block';
+                        document.getElementById('qr-img').src = "data:image/png;base64," + data.qr_code;
+
+                        // Ховаємо лінк входу, щоб не відволікати
+                        const loginLink = document.getElementById('login-link');
+                        if (loginLink) loginLink.style.display = 'none';
                     } else {
                         if (data.error === 'no_face_detected') {
-                            showError("Обличчя не знайдено! Переконайтеся, що обличчя добре видно на фото.");
+                            showError("Обличчя не знайдено! Спробуйте інше фото.");
                         } else {
-                            showError(data.message || data.error || "Помилка реєстрації");
+                            showError(data.message || data.error);
                         }
                     }
                 })
-                .catch(error => { hideLoader(); showError("Помилка мережі: " + error); });
+                .catch(err => {
+                    hideLoader();
+                    console.error(err);
+                    showError("Помилка мережі");
+                });
+        }
+
+        // STEP 2: Send OTP -> Finish
+        function handleStep2(event) {
+            event.preventDefault(); clearError();
+            const code = document.getElementById('otp-code').value;
+            if (code.length < 6) { showError("Введіть 6 цифр коду"); return; }
+
+            const formData = new FormData();
+            formData.append('otp_code', code);
+
+            showLoader();
+            fetch("{% url 'register_step2' %}", {
+                method: 'POST', body: formData, headers: { 'X-CSRFToken': getCookie('csrftoken') }
+            })
+                .then(res => res.json())
+                .then(data => {
+                    hideLoader();
+                    if (data.success) {
+                        alert("Вітаємо! Реєстрація успішна.");
+                        window.location.href = "{% url 'user_list' %}";
+                    } else {
+                        showError(data.error);
+                    }
+                })
+                .catch(err => { hideLoader(); showError("Помилка мережі"); });
         }
     </script>
 </body>

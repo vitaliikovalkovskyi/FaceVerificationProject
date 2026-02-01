@@ -1,12 +1,16 @@
 import os
-import cv2
 import base64
 import requests
-from django.shortcuts import render
+import shutil
+import pyotp          # <--- ДОДАЙ ЦЕ (Для генерації кодів)
+import qrcode         # <--- ДОДАЙ ЦЕ (Для малювання QR)
+from io import BytesIO # <--- ДОДАЙ ЦЕ (Для збереження QR в пам'ять)
+from django.shortcuts import render, redirect, get_object_or_404
 from django.http import JsonResponse
 from django.conf import settings
+from django.core.files.base import ContentFile
 from deepface import DeepFace
-import shutil
+from .models import UserProfile
 
 # ============================================================
 # ФУНКЦІЯ ЗБЕРЕЖЕННЯ BASE64 ФОТО
@@ -212,83 +216,175 @@ def faceAnalise(request):
 # ============================================================
 # ДОДАТКОВІ VIEW (малі коментарі)
 # ============================================================
-def register(request):
-    """
-    Реєстрація користувача з ОБОВ'ЯЗКОВОЮ перевіркою наявності обличчя.
-    """
+# ============================================================
+# РЕЄСТРАЦІЯ - ЕТАП 1: Перевірка фото та Генерація QR
+# ============================================================
+# ============================================================
+# РЕЄСТРАЦІЯ - ЕТАП 1: Перевірка фото та Генерація QR
+# ============================================================
+def register_step1(request):
     if request.method == 'POST':
         username = request.POST.get('username')
-        email = request.POST.get('email')
         
-        # Отримуємо дані фото: або з камери (base64), або файл
+        # 1. Перевірка на унікальність
+        if UserProfile.objects.filter(username=username).exists():
+            return JsonResponse({"success": False, "error": "Користувач з таким ім'ям вже існує!"}, status=400)
+
         camera_data = request.POST.get('camera_data')
         file_upload = request.FILES.get('photo')
-
+        
         temp_path = None
-        # Формуємо ім'я файлу (наприклад: user_ivan_ref.jpg)
-        file_name = f"user_{username}_ref.jpg"
 
-        # --- 1. ЗБЕРЕЖЕННЯ ФОТО (Тимчасово або постійно) ---
         try:
+            # Створюємо шлях для тимчасового файлу
+            temp_filename = f"temp_reg_{username}.jpg"
+            temp_path = os.path.join(settings.MEDIA_ROOT, temp_filename)
+            
+            # 2. Зберігаємо файл
             if camera_data:
-                # Якщо фото з камери (base64)
-                # Використовуємо твою функцію save_base64_image, якщо вона є, або пишемо тут:
-                if "base64," in camera_data:
-                    header, encoded = camera_data.split(",", 1)
-                    data = base64.b64decode(encoded)
+                if ';base64,' in camera_data:
+                    format, imgstr = camera_data.split(';base64,') 
                 else:
-                    data = base64.b64decode(camera_data)
-
-                temp_path = os.path.join(settings.STATICFILES_DIRS[0], file_name)
+                    imgstr = camera_data
+                
+                data = base64.b64decode(imgstr)
                 with open(temp_path, "wb") as f:
                     f.write(data)
-
+            
             elif file_upload:
-                # Якщо завантажено файл через кнопку "Завантажити"
-                temp_path = os.path.join(settings.STATICFILES_DIRS[0], file_name)
                 with open(temp_path, 'wb') as f:
                     for chunk in file_upload.chunks():
                         f.write(chunk)
             else:
-                return JsonResponse({"success": False, "error": "Фото не надано!"}, status=400)
+                return JsonResponse({"success": False, "error": "Фото не надано"}, status=400)
 
-        except Exception as e:
-            return JsonResponse({"success": False, "error": f"Помилка збереження файлу: {str(e)}"}, status=500)
+            # 3. Валідація обличчя (ВИПРАВЛЕНО)
+            # Ми змінили detector_backend на 'retinaface' (або спробуй 'mtcnn', якщо буде довго)
+            try:
+                DeepFace.extract_faces(
+                    img_path=temp_path, 
+                    detector_backend='retinaface', # <--- ЦЕЙ ДЕТЕКТОР НАБАГАТО КРАЩИЙ
+                    enforce_detection=True
+                )
+            except ValueError:
+                if os.path.exists(temp_path): os.remove(temp_path)
+                return JsonResponse({
+                    "success": False, 
+                    "error": "no_face_detected", 
+                    "message": "Обличчя не знайдено! Спробуйте інший ракурс або детектор 'retinaface'."
+                }, status=400)
 
-        # --- 2. ВАЛІДАЦІЯ ОБЛИЧЧЯ ЧЕРЕЗ DEEPFACE ---
-        try:
-            # enforce_detection=True - це головна перевірка!
-            # Якщо обличчя немає, DeepFace викине ValueError
-            DeepFace.extract_faces(img_path=temp_path, enforce_detection=True)
-
-            # --- 3. ЯКЩО ОБЛИЧЧЯ ЗНАЙДЕНО ---
-            # Тут мав би бути код збереження User в базу даних (Django Models).
-            # Поки що ми просто залишаємо файл як еталон і повертаємо успіх.
+            # 4. Генерація 2FA Secret
+            secret = pyotp.random_base32()
             
-            print(f"Успішна реєстрація: {username}. Обличчя знайдено.")
+            # Генеруємо посилання
+            totp_uri = pyotp.totp.TOTP(secret).provisioning_uri(
+                name=username, 
+                issuer_name="FaceID System"
+            )
+            
+            # QR-код
+            qr = qrcode.make(totp_uri)
+            buffer = BytesIO()
+            qr.save(buffer, format="PNG")
+            qr_base64 = base64.b64encode(buffer.getvalue()).decode()
+
+            # 5. Зберігаємо в сесію
+            request.session['reg_username'] = username
+            request.session['reg_secret'] = secret
+            request.session['reg_temp_photo_path'] = temp_path 
+
             return JsonResponse({
                 "success": True, 
-                "message": f"Користувач {username} успішно зареєстрований!"
+                "qr_code": qr_base64,
+                "message": "Фото прийнято!"
             })
 
-        except ValueError:
-            # DeepFace не знайшов обличчя -> Видаляємо файл і вертаємо помилку
-            if os.path.exists(temp_path):
-                os.remove(temp_path)
-            
-            return JsonResponse({
-                "success": False, 
-                "error": "no_face_detected", # Цей код ловить JS на фронтенді
-                "message": "На фото не знайдено обличчя! Переконайтеся, що освітлення добре і обличчя в центрі."
-            }, status=400)
-
         except Exception as e:
-            # Будь-яка інша помилка DeepFace
-            if os.path.exists(temp_path):
-                os.remove(temp_path)
-            return JsonResponse({"success": False, "error": f"Помилка аналізу: {str(e)}"}, status=500)
+            if temp_path and os.path.exists(temp_path): os.remove(temp_path)
+            print(f"Error: {e}")
+            return JsonResponse({"success": False, "error": f"Помилка: {str(e)}"}, status=500)
 
     return JsonResponse({"success": False, "error": "Method not allowed"}, status=405)
+
+
+# ============================================================
+# РЕЄСТРАЦІЯ - ЕТАП 2: Перевірка коду та Збереження в БД
+# ============================================================
+def register_step2(request):
+    if request.method == 'POST':
+        otp_code = request.POST.get('otp_code')
+        
+        # Отримуємо дані з сесії
+        username = request.session.get('reg_username')
+        secret = request.session.get('reg_secret')
+        temp_path = request.session.get('reg_temp_photo_path')
+
+        if not username or not secret:
+             return JsonResponse({"success": False, "error": "Сесія закінчилась. Почніть спочатку."}, status=400)
+
+        # 1. Перевіряємо код
+        totp = pyotp.TOTP(secret)
+        if not totp.verify(otp_code):
+             return JsonResponse({"success": False, "error": "Невірний код! Спробуйте ще раз."}, status=400)
+
+        # 2. Якщо код вірний -> Зберігаємо в БД
+        try:
+            new_user = UserProfile(username=username, totp_secret=secret)
+            
+            # Читаємо фото з тимчасового файлу і зберігаємо в модель
+            with open(temp_path, 'rb') as f:
+                img_content = ContentFile(f.read(), name=f"{username}.jpg")
+                new_user.photo.save(f"{username}.jpg", img_content, save=True)
+            
+            # Очищаємо за собою
+            if os.path.exists(temp_path): os.remove(temp_path)
+            del request.session['reg_username']
+            del request.session['reg_secret']
+            del request.session['reg_temp_photo_path']
+
+            return JsonResponse({"success": True, "message": "Реєстрація завершена успішно!"})
+            
+        except Exception as e:
+            return JsonResponse({"success": False, "error": f"Помилка збереження: {str(e)}"}, status=500)
+
+    return JsonResponse({"success": False, "error": "Method not allowed"}, status=405)
+
+
+# ============================================================
+# СПИСОК КОРИСТУВАЧІВ (Вхід)
+# ============================================================
+def user_list(request):
+    """
+    Виводить список користувачів з можливістю пошуку за іменем.
+    """
+    query = request.GET.get('q') # Отримуємо текст з пошукового рядка
+    
+    if query:
+        # icontains = case-insensitive contains (шукає входження без урахування регістру)
+        users = UserProfile.objects.filter(username__icontains=query).order_by('-created_at')
+    else:
+        users = UserProfile.objects.all().order_by('-created_at')
+        
+    return render(request, 'verifier/user_list.html', {'users': users, 'query': query})
+
+def delete_user(request, user_id):
+    if request.method == 'POST':
+        # Знаходимо користувача або повертаємо 404 помилку
+        user = get_object_or_404(UserProfile, id=user_id)
+        
+        # 1. Видаляємо файл фото з диска (якщо він є)
+        if user.photo:
+            user.photo.delete(save=False)
+        
+        # 2. Видаляємо запис з бази даних
+        user.delete()
+        
+        # Повертаємось до списку
+        return redirect('user_list')
+    
+    # Якщо хтось спробує зайти просто за посиланням без кнопки - перекидаємо назад
+    return redirect('user_list')
 
 # ============================================================
 # VIEW З ПРОСТИМ РЕНДЕРОМ HTML

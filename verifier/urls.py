@@ -13,7 +13,10 @@ urlpatterns = [
     path('capture-test-photo/', capture_test_photo, name='capture_test_photo'),
     path('faceAnalise/', faceAnalise, name='faceAnalise'),
     path('magisterjob/', magisterjob, name='magisterjob'),
-    path('register/', views.register, name='register'),
+    path('register/step1/', views.register_step1, name='register_step1'),
+    path('register/step2/', views.register_step2, name='register_step2'),
+    path('users/', views.user_list, name='user_list'),
+    path('users/delete/<int:user_id>/', views.delete_user, name='delete_user'),
     
 ] + static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
 
