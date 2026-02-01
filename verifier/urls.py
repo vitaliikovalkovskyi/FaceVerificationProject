@@ -1,5 +1,5 @@
 from django.urls import path
-from .views import startpage, home, verify_image, capture_test_photo, faceAnalise,magisterjob
+from .views import startpage, home, verify_image, capture_test_photo, faceAnalise,magisterjob, krystyna_view
 from django.conf import settings
 from django.conf.urls.static import static
 from . import views
@@ -17,6 +17,7 @@ urlpatterns = [
     path('register/step2/', views.register_step2, name='register_step2'),
     path('users/', views.user_list, name='user_list'),
     path('users/delete/<int:user_id>/', views.delete_user, name='delete_user'),
+    path('krystyna/', views.krystyna_view, name='krystyna'),
     
 ] + static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
 

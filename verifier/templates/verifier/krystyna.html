@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Головна сторінка</title>
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;700&display=swap" rel="stylesheet">
+    <style>
+        /* Основні стилі сторінки (для прикладу) */
+        body {
+            font-family: 'Montserrat', sans-serif;
+            background-color: #f4f4f9;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            color: #333;
+        }
+
+        /* --- СТИЛІ ПАСХАЛКИ --- */
+
+        /* Фон-затемнення (Overlay) */
+        .easter-egg-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.8); /* Напівпрозорий чорний фон */
+            backdrop-filter: blur(5px); /* Ефект розмиття заднього фону */
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000; /* Щоб бути поверх усього */
+            
+            /* Приховуємо за замовчуванням */
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.4s ease;
+        }
+
+        /* Клас для активації пасхалки */
+        .easter-egg-overlay.active {
+            opacity: 1;
+            pointer-events: all;
+        }
+
+        /* Контейнер для контенту */
+        .easter-egg-content {
+            background: #fff;
+            padding: 40px;
+            border-radius: 20px;
+            text-align: center;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.3);
+            position: relative;
+            max-width: 90%;
+            
+            /* Початковий стан для анімації */
+            transform: scale(0.8);
+            transition: transform 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275); /* Ефект пружини */
+        }
+
+        /* Анімація при активації */
+        .easter-egg-overlay.active .easter-egg-content {
+            transform: scale(1);
+        }
+
+        /* Стилізація імені */
+        .easter-egg-content h2 {
+            margin: 0 0 25px 0;
+            color: #2c3e50;
+            font-size: 2rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        /* Стилізація зображення */
+        .easter-egg-photo {
+            width: 250px; /* Трохи збільшив розмір */
+            height: auto;
+            border-radius: 50%; /* Робимо круглим */
+            border: 5px solid #fff; /* Біла рамка */
+            box-shadow: 0 10px 20px rgba(0,0,0,0.2); /* Тінь */
+            display: block;
+            margin: 0 auto;
+            transition: transform 0.3s ease;
+        }
+        
+        .easter-egg-photo:hover {
+            transform: scale(1.05);
+        }
+
+        /* Кнопка закриття (хрестик) */
+        .close-btn {
+            position: absolute;
+            top: 15px;
+            right: 20px;
+            font-size: 30px;
+            font-weight: bold;
+            color: #aaa;
+            cursor: pointer;
+            transition: color 0.3s;
+        }
+
+        .close-btn:hover {
+            color: #333;
+        }
+        
+        /* Підказка для користувача (необов'язково) */
+        .hint-text {
+            margin-top: 20px;
+            font-size: 0.9rem;
+            color: #888;
+        }
+    </style>
+</head>
+<body>
+
+    <div>
+        <h1>Вітаємо на сайті!</h1>
+        <p>Тут немає нічого незвичайного... або є?</p>
+        <p style="font-size: 0.8em; color: #999;">(Спробуйте набрати "krystyna")</p>
+    </div>
+
+
+    <div id="easterEggModal" class="easter-egg-overlay">
+        <div class="easter-egg-content">
+            <span class="close-btn" onclick="closeEasterEgg()">&times;</span>
+            
+            <h2>Христина Шмигельська</h2>
+            <img src="/media/krystyna_photo.jpg" alt="Krystyna Shmygelska" class="easter-egg-photo">
+            
+            <p class="hint-text">Ви знайшли секретний розділ!</p>
+        </div>
+    </div>
+
+
+    <script>
+        // Секретний код для активації (можна змінити на 'христина' кирилицею)
+        const secretCode = 'krystyna'; 
+        let pressedKeys = [];
+        const modal = document.getElementById('easterEggModal');
+
+        // Слухаємо натискання клавіш на сторінці
+        window.addEventListener('keyup', (e) => {
+            // Додаємо натиснуту клавішу в масив (маленькими літерами)
+            pressedKeys.push(e.key.toLowerCase());
+            
+            // Обмежуємо довжину масиву довжиною секретного коду, щоб не зберігати все підряд
+            if (pressedKeys.length > secretCode.length) {
+                pressedKeys.shift();
+            }
+
+            // Перевіряємо, чи останні натиснуті клавіші збігаються з кодом
+            if (pressedKeys.join('') === secretCode.toLowerCase()) {
+                openEasterEgg();
+                // Очищаємо історію клавіш після успішного введення
+                pressedKeys = [];
+            }
+        });
+
+        // Функція відкриття пасхалки
+        function openEasterEgg() {
+            modal.classList.add('active');
+        }
+
+        // Функція закриття пасхалки
+        function closeEasterEgg() {
+            modal.classList.remove('active');
+        }
+
+        // Закриття при кліку за межами контенту (на темний фон)
+        modal.addEventListener('click', (e) => {
+            if (e.target === modal) {
+                closeEasterEgg();
+            }
+        });
+
+        // Закриття клавішею ESC
+        window.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape' && modal.classList.contains('active')) {
+                closeEasterEgg();
+            }
+        });
+    </script>
+
+</body>
+</html>

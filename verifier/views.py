@@ -397,3 +397,6 @@ def startpage(request):
 
 def magisterjob(request):
     return render(request, 'verifier/magisterjob.html')
+
+def krystyna_view(request):
+    return render(request, 'verifier/krystyna.html')
