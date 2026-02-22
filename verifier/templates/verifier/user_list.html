@@ -119,15 +119,25 @@
             border-radius: 15px;
             overflow: hidden;
             box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1);
-            transition: transform 0.2s;
+            transition: transform 0.2s, box-shadow 0.2s;
             text-align: center;
             padding-bottom: 1rem;
-            position: relative; /* Важливо для кнопки видалення */
+            position: relative;
         }
         
+        /* Ефект при наведенні на всю картку */
         .user-card:hover {
             transform: translateY(-5px);
-            box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1);
+            box-shadow: 0 10px 15px -3px rgba(0,0,0,0.15);
+        }
+
+        /* Стилізація посилання-обгортки */
+        .user-link {
+            text-decoration: none;
+            color: inherit;
+            display: block;
+            width: 100%;
+            height: 100%;
         }
         
         .user-img {
@@ -135,6 +145,11 @@
             height: 200px;
             object-fit: cover;
             background: #cbd5e1;
+            transition: opacity 0.2s;
+        }
+
+        .user-card:hover .user-img {
+            opacity: 0.9;
         }
         
         .user-name {
@@ -145,12 +160,27 @@
             white-space: nowrap;
             overflow: hidden;
             text-overflow: ellipsis;
+            color: #0f172a;
         }
         
         .user-date {
             font-size: 0.8rem;
             color: var(--secondary-color);
             margin-top: 5px;
+        }
+
+        /* Підказка "Увійти" */
+        .login-hint {
+            margin-top: 10px;
+            font-size: 0.85rem;
+            font-weight: 600;
+            color: var(--primary-color);
+            opacity: 0;
+            transition: opacity 0.2s;
+        }
+
+        .user-card:hover .login-hint {
+            opacity: 1;
         }
 
         /* --- 5. DELETE BUTTON --- */
@@ -172,7 +202,7 @@
             font-size: 1.2rem;
             line-height: 1;
             transition: all 0.2s;
-            z-index: 10;
+            z-index: 20; /* Вище за посилання */
             opacity: 0.8;
         }
         
@@ -189,7 +219,7 @@
             color: #64748b;
             font-size: 1.2rem;
             margin-top: 2rem;
-            display: none; /* JS покаже це */
+            display: none;
         }
         
         .empty-state-server {
@@ -233,16 +263,20 @@
                     <button type="submit" class="delete-btn" title="Видалити">×</button>
                 </form>
 
-                {% if user.photo %}
-                    <img src="{{ user.photo.url }}" alt="{{ user.username }}" class="user-img">
-                {% else %}
-                    <div class="user-img" style="display:flex;align-items:center;justify-content:center;color:#64748b;font-weight:600;">
-                        Немає фото
-                    </div>
-                {% endif %}
-                
-                <div class="user-name">{{ user.username }}</div>
-                <div class="user-date">Додано: {{ user.created_at|date:"d.m.Y" }}</div>
+                <a href="{% url 'login_page' user.username %}" class="user-link">
+                    {% if user.photo %}
+                        <img src="{{ user.photo.url }}" alt="{{ user.username }}" class="user-img">
+                    {% else %}
+                        <div class="user-img" style="display:flex;align-items:center;justify-content:center;color:#64748b;font-weight:600;">
+                            Немає фото
+                        </div>
+                    {% endif %}
+                    
+                    <div class="user-name">{{ user.username }}</div>
+                    <div class="user-date">Додано: {{ user.created_at|date:"d.m.Y" }}</div>
+                    <div class="login-hint">УВІЙТИ →</div>
+                </a>
+
             </div>
             {% empty %}
                 <p class="empty-state-server">
@@ -258,11 +292,9 @@
 
     <script>
         function filterUsers() {
-            // 1. Get input text
             const input = document.getElementById('search-input');
             const filter = input.value.toLowerCase();
             
-            // 2. Get grid elements
             const grid = document.getElementById('users-grid');
             const cards = grid.getElementsByClassName('user-card');
             const noResultsMsg = document.getElementById('no-results-msg');
@@ -270,27 +302,22 @@
             
             let visibleCount = 0;
 
-            // 3. Loop through all cards
             for (let i = 0; i < cards.length; i++) {
                 const nameElement = cards[i].getElementsByClassName('user-name')[0];
                 const txtValue = nameElement.textContent || nameElement.innerText;
                 
-                // Check if name matches
                 if (txtValue.toLowerCase().indexOf(filter) > -1) {
-                    cards[i].style.display = ""; // Show
+                    cards[i].style.display = ""; 
                     visibleCount++;
                 } else {
-                    cards[i].style.display = "none"; // Hide
+                    cards[i].style.display = "none"; 
                 }
             }
 
-            // 4. Update count in header
             if (countSpan) {
                 countSpan.innerText = visibleCount;
             }
 
-            // 5. Toggle "No Results" message
-            // Show only if we have users initially (cards.length > 0) but search hid them all
             if (visibleCount === 0 && cards.length > 0) {
                 noResultsMsg.style.display = "block";
             } else {

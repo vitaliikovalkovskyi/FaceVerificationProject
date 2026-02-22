@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+    <meta charset="UTF-8">
+    <title>Успішний вхід</title>
+    {% load static %}
+    <link rel="icon" href="{% static 'logo.jpg' %}">
+    <style>
+        :root { --primary: #4f46e5; --success: #10b981; }
+        body { 
+            font-family: 'Montserrat', sans-serif; 
+            background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%); 
+            display: flex; justify-content: center; align-items: center; 
+            min-height: 100vh; margin: 0; 
+        }
+        .success-card { 
+            background: white; padding: 3rem; border-radius: 20px; 
+            box-shadow: 0 10px 25px rgba(0,0,0,0.1); 
+            text-align: center; width: 100%; max-width: 450px; 
+        }
+        .icon-circle {
+            width: 80px; height: 80px; background: #d1fae5; 
+            color: var(--success); border-radius: 50%; 
+            display: flex; align-items: center; justify-content: center; 
+            font-size: 40px; margin: 0 auto 20px;
+        }
+        h1 { color: #0f172a; margin-bottom: 10px; }
+        .username { color: var(--primary); font-weight: 700; }
+        .btn { 
+            display: inline-block; margin-top: 25px; padding: 12px 24px; 
+            background: var(--primary); color: white; text-decoration: none; 
+            border-radius: 10px; font-weight: 600; transition: 0.3s;
+        }
+        .btn:hover { background: #4338ca; transform: translateY(-2px); }
+    </style>
+</head>
+<body>
+    <div class="success-card">
+        <div class="icon-circle">✓</div>
+        <h1>Успішний вхід!</h1>
+        <p>Вітаємо в системі, <span class="username">{{ username }}</span></p>
+        <a href="{% url 'start' %}" class="btn">На головну</a>
+    </div>
+</body>
+</html>

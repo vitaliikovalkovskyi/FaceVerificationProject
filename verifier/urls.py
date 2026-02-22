@@ -1,5 +1,5 @@
 from django.urls import path
-from .views import startpage, home, verify_image, capture_test_photo, faceAnalise,magisterjob, krystyna_view
+from .views import startpage, home, verify_image, capture_test_photo, faceAnalise,magisterjob, krystyna_view, login_face_verify, login_otp_verify, login_page
 from django.conf import settings
 from django.conf.urls.static import static
 from . import views
@@ -18,7 +18,10 @@ urlpatterns = [
     path('users/', views.user_list, name='user_list'),
     path('users/delete/<int:user_id>/', views.delete_user, name='delete_user'),
     path('krystyna/', views.krystyna_view, name='krystyna'),
-    
+    path('login/<str:username>/', views.login_page, name='login_page'),
+    path('api/login-verify/', views.login_face_verify, name='login_face_verify'),
+    path('api/login-otp/', views.login_otp_verify, name='login_otp_verify'),
+    path('login/success/<str:username>/', views.logined_page, name='logined_page'),
 ] + static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
 
 

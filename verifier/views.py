@@ -16,13 +16,16 @@ from .models import UserProfile
 # ФУНКЦІЯ ЗБЕРЕЖЕННЯ BASE64 ФОТО
 # ============================================================
 def save_base64_image(data_url, file_name):
-    """
-    **ЦЕ ДЛЯ ЗБЕРЕЖЕННЯ ФОТО, НАДАНОГО З КАМЕРИ У ВИДІ BASE64**
-    """
     try:
         header, encoded = data_url.split(",", 1)
         data = base64.b64decode(encoded)
-        file_path = os.path.join(settings.STATICFILES_DIRS[0], file_name)
+        
+        # ЗМІНЕНО: тепер зберігаємо в MEDIA_ROOT/temp_captures/
+        temp_dir = os.path.join(settings.MEDIA_ROOT, 'temp_captures')
+        if not os.path.exists(temp_dir):
+            os.makedirs(temp_dir)
+            
+        file_path = os.path.join(temp_dir, file_name)
         with open(file_path, "wb") as f:
             f.write(data)
         return file_path
@@ -224,88 +227,52 @@ def faceAnalise(request):
 # ============================================================
 def register_step1(request):
     if request.method == 'POST':
+        # ОЧИЩЕННЯ СЕСІЇ перед новою реєстрацією, щоб не було чужих фото
+        keys_to_clear = ['reg_username', 'reg_secret', 'reg_temp_photo_path']
+        for key in keys_to_clear:
+            if key in request.session: del request.session[key]
+
         username = request.POST.get('username')
-        
-        # 1. Перевірка на унікальність
         if UserProfile.objects.filter(username=username).exists():
-            return JsonResponse({"success": False, "error": "Користувач з таким ім'ям вже існує!"}, status=400)
+            return JsonResponse({"success": False, "error": "Користувач вже існує!"}, status=400)
 
         camera_data = request.POST.get('camera_data')
         file_upload = request.FILES.get('photo')
         
-        temp_path = None
-
-        try:
-            # Створюємо шлях для тимчасового файлу
-            temp_filename = f"temp_reg_{username}.jpg"
+        temp_filename = f"temp_reg_{username}.jpg"
+        
+        if camera_data:
+            # Використовуємо нашу оновлену функцію
+            img_data = camera_data.split(';base64,')[1] if ';base64,' in camera_data else camera_data
+            temp_path = save_base64_image(f"data:image/jpeg;base64,{img_data}", temp_filename)
+        elif file_upload:
             temp_path = os.path.join(settings.MEDIA_ROOT, temp_filename)
-            
-            # 2. Зберігаємо файл
-            if camera_data:
-                if ';base64,' in camera_data:
-                    format, imgstr = camera_data.split(';base64,') 
-                else:
-                    imgstr = camera_data
-                
-                data = base64.b64decode(imgstr)
-                with open(temp_path, "wb") as f:
-                    f.write(data)
-            
-            elif file_upload:
-                with open(temp_path, 'wb') as f:
-                    for chunk in file_upload.chunks():
-                        f.write(chunk)
-            else:
-                return JsonResponse({"success": False, "error": "Фото не надано"}, status=400)
+            with open(temp_path, 'wb') as f:
+                for chunk in file_upload.chunks(): f.write(chunk)
+        else:
+            return JsonResponse({"success": False, "error": "Фото не надано"}, status=400)
 
-            # 3. Валідація обличчя (ВИПРАВЛЕНО)
-            # Ми змінили detector_backend на 'retinaface' (або спробуй 'mtcnn', якщо буде довго)
-            try:
-                DeepFace.extract_faces(
-                    img_path=temp_path, 
-                    detector_backend='retinaface', # <--- ЦЕЙ ДЕТЕКТОР НАБАГАТО КРАЩИЙ
-                    enforce_detection=True
-                )
-            except ValueError:
-                if os.path.exists(temp_path): os.remove(temp_path)
-                return JsonResponse({
-                    "success": False, 
-                    "error": "no_face_detected", 
-                    "message": "Обличчя не знайдено! Спробуйте інший ракурс або детектор 'retinaface'."
-                }, status=400)
-
-            # 4. Генерація 2FA Secret
+        # Валідація FaceID... (залишається як була)
+        try:
+            DeepFace.extract_faces(img_path=temp_path, detector_backend='retinaface', enforce_detection=True)
+            
+            # Зберігаємо в сесію ПРАВИЛЬНИЙ шлях
+            request.session['reg_username'] = username
+            request.session['reg_temp_photo_path'] = temp_path
+            
+            # Генерація QR... (залишається як була)
             secret = pyotp.random_base32()
-            
-            # Генеруємо посилання
-            totp_uri = pyotp.totp.TOTP(secret).provisioning_uri(
-                name=username, 
-                issuer_name="FaceID System"
-            )
-            
-            # QR-код
+            request.session['reg_secret'] = secret
+            totp_uri = pyotp.totp.TOTP(secret).provisioning_uri(name=username, issuer_name="FaceID System")
             qr = qrcode.make(totp_uri)
             buffer = BytesIO()
             qr.save(buffer, format="PNG")
             qr_base64 = base64.b64encode(buffer.getvalue()).decode()
 
-            # 5. Зберігаємо в сесію
-            request.session['reg_username'] = username
-            request.session['reg_secret'] = secret
-            request.session['reg_temp_photo_path'] = temp_path 
-
-            return JsonResponse({
-                "success": True, 
-                "qr_code": qr_base64,
-                "message": "Фото прийнято!"
-            })
-
+            return JsonResponse({"success": True, "qr_code": qr_base64, "message": "Фото прийнято!"})
         except Exception as e:
-            if temp_path and os.path.exists(temp_path): os.remove(temp_path)
-            print(f"Error: {e}")
-            return JsonResponse({"success": False, "error": f"Помилка: {str(e)}"}, status=500)
-
-    return JsonResponse({"success": False, "error": "Method not allowed"}, status=405)
+            if os.path.exists(temp_path): os.remove(temp_path)
+            return JsonResponse({"success": False, "error": "Обличчя не знайдено"}, status=400)
 
 
 # ============================================================
@@ -386,11 +353,76 @@ def delete_user(request, user_id):
     # Якщо хтось спробує зайти просто за посиланням без кнопки - перекидаємо назад
     return redirect('user_list')
 
+def login_page(request, username):
+    """Сторінка входу для конкретного користувача"""
+    user = get_object_or_404(UserProfile, username=username)
+    request.session['face_attempts'] = 0  # Скидаємо спроби
+    return render(request, 'verifier/login.html', {'user': user})
+
+def login_face_verify(request):
+    """Етап 1: Біометрична перевірка з обов'язковим підрахунком спроб"""
+    if request.method == 'POST':
+        username = request.POST.get('username')
+        image_data = request.POST.get('image_data')
+        user = get_object_or_404(UserProfile, username=username)
+
+        # 1. Отримуємо та збільшуємо лічильник спроб ОДРАЗУ
+        attempts = request.session.get('face_attempts', 0) + 1
+        request.session['face_attempts'] = attempts
+
+        # Перевірка на ліміт
+        is_blocked = attempts >= 3
+
+        captured_path = save_base64_image(image_data, f"login_attempt_{username}.jpg")
+        
+        try:
+            result = DeepFace.verify(
+                img1_path=user.photo.path,
+                img2_path=captured_path,
+                detector_backend='retinaface', 
+                enforce_detection=True
+            )
+            
+            if result["verified"]:
+                request.session['face_attempts'] = 0 # Скидаємо при успіху
+                return JsonResponse({"success": True, "message": "Обличчя підтверджено!"})
+            
+            # Якщо обличчя видно, але воно не те
+            error_type = "too_many_attempts" if is_blocked else "fail"
+            msg = "3 невдалі спроби. Перехід на OTP." if is_blocked else f"Обличчя не збігається. Спроба {attempts} з 3."
+            return JsonResponse({"success": False, "error": error_type, "message": msg})
+
+        except Exception as e:
+            # Якщо обличчя взагалі не знайшли — ЦЕ ТЕЖ РАХУЄТЬСЯ ЯК СПРОБА
+            error_type = "too_many_attempts" if is_blocked else "no_face"
+            msg = "3 невдалі спроби (обличчя не знайдено). Перехід на OTP." if is_blocked else f"Обличчя не знайдено. Спроба {attempts} з 3."
+            return JsonResponse({"success": False, "error": error_type, "message": msg})
+
+    return JsonResponse({"error": "Method not allowed"}, status=405)
+
+def login_otp_verify(request):
+    """Етап 2: Резервний вхід через OTP (після 3 помилок FaceID)"""
+    if request.method == 'POST':
+        otp_code = request.POST.get('otp_code')
+        username = request.POST.get('username')
+        user = get_object_or_404(UserProfile, username=username)
+
+        totp = pyotp.TOTP(user.totp_secret)
+        if totp.verify(otp_code):
+            return JsonResponse({"success": True, "message": "Вхід успішний!"})
+        else:
+            return JsonResponse({"success": False, "error": "Невірний код."})
+    return JsonResponse({"error": "Method not allowed"}, status=405)
+
 # ============================================================
 # VIEW З ПРОСТИМ РЕНДЕРОМ HTML
 # ============================================================
 def home(request):
     return render(request, 'verifier/home.html')
+
+def logined_page(request, username):
+    """Сторінка, яка відображається після успішної автентифікації"""
+    return render(request, 'verifier/logined_page.html', {'username': username})
 
 def startpage(request):
     return render(request, 'verifier/startpage.html')

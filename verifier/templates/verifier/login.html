@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+    <meta charset="UTF-8">
+    <title>Біометричний вхід | FaceID</title>
+    {% load static %}
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root { --primary: #4f46e5; --bg: #f8fafc; --card: #ffffff; --success: #10b981; }
+        body { font-family: 'Montserrat', sans-serif; background: var(--bg); display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; }
+        .card { background: var(--card); padding: 2rem; border-radius: 24px; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.1); width: 100%; max-width: 500px; text-align: center; position: relative; }
+        .card::before { content: ''; position: absolute; top: 0; left: 0; width: 100%; height: 6px; background: linear-gradient(90deg, var(--primary), #818cf8); border-radius: 24px 24px 0 0; }
+        .camera-container { position: relative; width: 100%; aspect-ratio: 4/3; background: #eee; border-radius: 16px; overflow: hidden; margin: 1.5rem 0; border: 2px solid #e2e8f0; }
+        video, canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); }
+        .instr-badge { position: absolute; bottom: 15px; left: 50%; transform: translateX(-50%); background: rgba(15, 23, 42, 0.85); color: white; padding: 10px 25px; border-radius: 30px; font-weight: 600; font-size: 1rem; z-index: 10; white-space: nowrap; transition: 0.3s; }
+        .hint-arrow { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); font-size: 4rem; opacity: 0; transition: 0.3s; z-index: 5; pointer-events: none; }
+        .hint-arrow.visible { opacity: 0.7; animation: pulse 1s infinite; }
+        .step-dots { display: flex; justify-content: center; gap: 8px; margin-bottom: 10px; }
+        .dot { width: 30px; height: 6px; background: #e2e8f0; border-radius: 10px; transition: 0.3s; }
+        .dot.active { background: var(--primary); }
+        .dot.done { background: var(--success); }
+        .loader-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(255,255,255,0.95); display: none; flex-direction: column; align-items: center; justify-content: center; z-index: 100; backdrop-filter: blur(5px); }
+        .spinner { width: 50px; height: 50px; border: 5px solid #f3f3f3; border-top: 5px solid var(--primary); border-radius: 50%; animation: spin 1s linear infinite; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        @keyframes pulse { 0% { scale: 1; } 50% { scale: 1.2; } 100% { scale: 1; } }
+        .hidden { display: none !important; }
+        #otp-section { position: relative; z-index: 200; }
+    </style>
+</head>
+<body>
+
+<div id="loader" class="loader-overlay"><div class="spinner"></div><p style="font-weight: 700; color: var(--primary); margin-top: 15px;">ОБРОБКА ДАНИХ...</p></div>
+
+<div class="card" id="liveness-ui">
+    <a href="{% url 'user_list' %}" style="text-decoration: none; color: #64748b; font-size: 0.8rem; float: left;">← Назад</a>
+    <h2 style="margin-top: 25px;">Вхід: <span style="color: var(--primary);">{{ user.username }}</span></h2>
+    
+    <div class="step-dots" id="dots-container">
+        </div>
+
+    <div class="camera-container">
+        <video id="video" autoplay playsinline></video>
+        <canvas id="overlay"></canvas>
+        <div id="arrow" class="hint-arrow">⬅️</div>
+        <div id="instr" class="instr-badge">Впишіть обличчя в овал</div>
+    </div>
+    <p style="color: #64748b; font-size: 0.85rem;">Система випадковим чином перевіряє вашу присутність</p>
+</div>
+
+<div class="card hidden" id="otp-section">
+    <h2 style="color: var(--error);">2FA Перевірка</h2>
+    <p style="color: #64748b;">Біометрія не пройшла. Введіть OTP код:</p>
+    <form onsubmit="verifyOTP(event)">
+        <input type="text" id="otp-code" style="width: 200px; font-size: 2rem; letter-spacing: 8px; text-align: center; padding: 12px; border: 2px solid #e2e8f0; border-radius: 12px;" placeholder="000000" maxlength="6">
+        <button type="submit" style="width: 100%; padding: 14px; background: var(--primary); color: white; border: none; border-radius: 12px; margin-top: 20px; font-weight: 700; cursor: pointer;">ПІДТВЕРДИТИ</button>
+    </form>
+</div>
+
+<script>
+    const video = document.getElementById('video');
+    const canvas = document.getElementById('overlay');
+    const ctx = canvas.getContext('2d');
+    const instr = document.getElementById('instr');
+    const arrow = document.getElementById('arrow');
+    
+    let currentStepIndex = 0, livenessDone = false;
+    
+    // Пул завдань та генерація випадкової послідовності
+    const taskPool = [
+        { id: 'blink', text: "Кліпніть очима", icon: "👁️" },
+        { id: 'left', text: "Поверніть голову ліворуч", icon: "⬅️" },
+        { id: 'right', text: "Поверніть голову праворуч", icon: "➡️" }
+    ];
+    
+    // Формуємо чергу: 1.Align (завжди) + 2 випадкових з пулу
+    let taskQueue = [{ id: 'align', text: "Впишіть обличчя в овал" }];
+    const shuffled = taskPool.sort(() => 0.5 - Math.random()).slice(0, 2);
+    taskQueue = taskQueue.concat(shuffled);
+
+    // Створюємо індикатори кроків (точки)
+    const dotsContainer = document.getElementById('dots-container');
+    taskQueue.forEach((_, i) => {
+        const dot = document.createElement('div');
+        dot.id = `d${i}`;
+        dot.className = i === 0 ? 'dot active' : 'dot';
+        dotsContainer.appendChild(dot);
+    });
+
+    const faceMesh = new FaceMesh({ locateFile: (f) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${f}` });
+    faceMesh.setOptions({ maxNumFaces: 1, refineLandmarks: true, minDetectionConfidence: 0.7 });
+    
+    faceMesh.onResults(results => {
+        canvas.width = video.videoWidth; canvas.height = video.videoHeight;
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        
+        // Маска
+        ctx.fillStyle = "rgba(248, 250, 252, 0.7)";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.globalCompositeOperation = 'destination-out';
+        ctx.beginPath(); ctx.ellipse(canvas.width/2, canvas.height/2, 110, 150, 0, 0, 2 * Math.PI); ctx.fill();
+        ctx.globalCompositeOperation = 'source-over';
+        ctx.strokeStyle = livenessDone ? "#10b981" : "#4f46e5"; ctx.lineWidth = 4; ctx.stroke();
+
+        if (livenessDone || !results.multiFaceLandmarks?.[0]) return;
+        const landmarks = results.multiFaceLandmarks[0];
+        const nose = landmarks[1], eye = landmarks[159].y - landmarks[145].y;
+        
+        const currentTask = taskQueue[currentStepIndex];
+
+        // Логіка виконання поточного завдання
+        let success = false;
+        if (currentTask.id === 'align') {
+            if (Math.abs(nose.x - 0.5) < 0.08) success = true;
+        } else if (currentTask.id === 'blink') {
+            if (Math.abs(eye) < 0.012) success = true;
+        } else if (currentTask.id === 'left') {
+            arrow.innerText = "⬅️"; arrow.classList.add('visible');
+            if (nose.x > 0.65) success = true; // Відео дзеркальне: ніс вправо = поворот ліворуч
+        } else if (currentTask.id === 'right') {
+            arrow.innerText = "➡️"; arrow.classList.add('visible');
+            if (nose.x < 0.35) success = true;
+        }
+
+        if (success) {
+            document.getElementById(`d${currentStepIndex}`).className = 'dot done';
+            currentStepIndex++;
+            arrow.classList.remove('visible');
+            
+            if (currentStepIndex < taskQueue.length) {
+                const next = taskQueue[currentStepIndex];
+                document.getElementById(`d${currentStepIndex}`).className = 'dot active';
+                instr.innerText = next.text;
+            } else {
+                livenessDone = true;
+                instr.innerText = "ГОТОВО! ПЕРЕВІРКА...";
+                setTimeout(autoVerify, 400);
+            }
+        }
+    });
+
+async function autoVerify() {
+    const loader = document.getElementById('loader');
+    loader.style.display = 'flex';
+    
+    const tempCanvas = document.createElement('canvas');
+    tempCanvas.width = video.videoWidth;
+    tempCanvas.height = video.videoHeight;
+    tempCanvas.getContext('2d').drawImage(video, 0, 0);
+    
+    const fd = new FormData();
+    fd.append('username', '{{ user.username }}');
+    fd.append('image_data', tempCanvas.toDataURL('image/jpeg'));
+
+    try {
+        const res = await fetch("{% url 'login_face_verify' %}", {
+            method: 'POST',
+            body: fd,
+            headers: { 'X-CSRFToken': '{{ csrf_token }}' }
+        });
+        const data = await res.json();
+        
+        loader.style.display = 'none';
+
+        if (data.success) {
+            window.location.href = `/login/success/{{ user.username }}/`;
+        } else {
+            // Перевіряємо ключ помилки з сервера
+            if (data.error === "too_many_attempts") {
+                alert("FaceID заблоковано. Перехід на OTP.");
+                document.getElementById('liveness-ui').classList.add('hidden');
+                document.getElementById('otp-section').classList.remove('hidden');
+            } else {
+                alert(data.message); // Показуємо "Спроба 1/3" або "Обличчя не знайдено"
+                
+                // Скидаємо стан Anti-Spoofing для нової спроби без перезавантаження сторінки
+                currentStepIndex = 0;
+                livenessDone = false;
+                taskQueue.forEach((_, i) => {
+                    document.getElementById(`d${i}`).className = i === 0 ? 'dot active' : 'dot';
+                });
+                document.getElementById('instr').innerText = taskQueue[0].text;
+                document.getElementById('instr').classList.remove('success');
+            }
+        }
+    } catch (e) {
+        loader.style.display = 'none';
+        alert("Сталася помилка зв'язку з сервером.");
+    }
+}
+
+    async function verifyOTP(e) {
+        e.preventDefault();
+        const fd = new FormData(); fd.append('username', '{{ user.username }}'); fd.append('otp_code', document.getElementById('otp-code').value);
+        const res = await fetch("{% url 'login_otp_verify' %}", { method: 'POST', body: fd, headers: {'X-CSRFToken': '{{ csrf_token }}'} });
+        const data = await res.json();
+        if (data.success) window.location.href = "/login/success/{{ user.username }}/";
+        else alert(data.error);
+    }
+
+    navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480 } }).then(s => {
+        video.srcObject = s;
+        new Camera(video, { onFrame: async () => { await faceMesh.send({image: video}); }, width: 640, height: 480 }).start();
+    });
+</script>
+</body>
+</html>
