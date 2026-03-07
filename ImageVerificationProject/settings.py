@@ -136,3 +136,12 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 MEDIA_URL = '/media/'
 MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
+
+import os
+
+# Твої дані зі скриншоту
+KAGGLE_USERNAME = "wnezox"
+KAGGLE_KEY = "KGAT_a8cd6f828c9cd6e20b9982ac89ebe5ff"
+
+# Шлях до папки з моделями (щоб DeepFace не качав їх щоразу)
+DEEPFACE_MODELS_PATH = os.path.join(BASE_DIR, 'ml_models')

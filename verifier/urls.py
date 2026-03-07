@@ -22,6 +22,8 @@ urlpatterns = [
     path('api/login-verify/', views.login_face_verify, name='login_face_verify'),
     path('api/login-otp/', views.login_otp_verify, name='login_otp_verify'),
     path('login/success/<str:username>/', views.logined_page, name='logined_page'),
+    path('benchmark/', views.benchmark_page, name='benchmark_page'),
+    path('benchmark-stream/', views.benchmark_stream, name='benchmark_stream'),
 ] + static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
 
 

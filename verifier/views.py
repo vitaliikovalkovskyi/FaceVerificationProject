@@ -432,3 +432,23 @@ def magisterjob(request):
 
 def krystyna_view(request):
     return render(request, 'verifier/krystyna.html')
+
+
+# verifier/views.py
+from django.shortcuts import render
+from django.http import StreamingHttpResponse
+from .utils import run_accuracy_generator
+
+def benchmark_page(request):
+    """Відображає сторінку з формою вибору кількості тестів"""
+    return render(request, 'verifier/benchmark.html')
+
+def benchmark_stream(request):
+    limit = int(request.GET.get('limit', 50))
+    threshold = request.GET.get('threshold', 0.75)
+    dataset = request.GET.get('dataset', 'afdb') # Отримуємо вибір
+    
+    return StreamingHttpResponse(
+        run_accuracy_generator(limit, threshold, dataset), 
+        content_type='text/event-stream'
+    )
