@@ -366,19 +366,32 @@
                 {% csrf_token %}
                 <div class="form-group">
                     <label for="username">Ім'я користувача</label>
-                    <input type="text" id="username" name="username" class="form-input" placeholder="Введіть ім'я"
-                        required>
+                    <input type="text" id="username" name="username" class="form-input" placeholder="Введіть ім'я" required>
                 </div>
 
                 <div class="form-group">
-                    <label>Еталонне фото</label>
+                    <label>Еталонні фото
+                        <span style="font-size:0.78rem;font-weight:400;color:#7c3aed;margin-left:6px;">
+                            ✦ Multi-Reference: 3 фото = точніший embedding
+                        </span>
+                    </label>
+
                     <div class="photo-tabs">
-                        <div class="tab-btn active" onclick="switchMode('file')" id="tab-file">📁 Завантажити</div>
+                        <div class="tab-btn active" onclick="switchMode('file')" id="tab-file">📁 Файли</div>
                         <div class="tab-btn" onclick="switchMode('camera')" id="tab-camera">📷 Камера</div>
                     </div>
+
+                    <!-- Режим файлів: до 3 файлів -->
                     <div id="file-mode">
-                        <input type="file" id="photo-file" name="photo" accept="image/*" class="form-input">
+                        <div style="display:flex;flex-direction:column;gap:10px;">
+                            <input type="file" id="photo-file-1" name="photo_1" accept="image/*" class="form-input" placeholder="Фото 1 (обов'язково)">
+                            <input type="file" id="photo-file-2" name="photo_2" accept="image/*" class="form-input">
+                            <input type="file" id="photo-file-3" name="photo_3" accept="image/*" class="form-input">
+                        </div>
+                        <p style="font-size:0.78rem;color:#64748b;margin:6px 0 0;">Фото 1 — обов'язкове. Фото 2 і 3 — різні кути або освітлення для кращого embedding.</p>
                     </div>
+
+                    <!-- Режим камери: 3 кадри послідовно -->
                     <div id="camera-mode" class="hidden">
                         <div class="camera-wrapper visible" id="camera-box">
                             <div class="camera-controls">
@@ -389,10 +402,20 @@
                             <video id="video" autoplay playsinline></video>
                             <canvas id="canvas" class="hidden"></canvas>
                             <img id="photo-output" class="captured-img hidden" alt="Captured Photo">
-                            <div class="camera-overlay" id="camera-hint">Натисніть на відео</div>
+                            <div class="camera-overlay" id="camera-hint">Натисніть — зробити фото 1/3</div>
                         </div>
+
+                        <!-- Мініатюри знятих кадрів -->
+                        <div id="captured-thumbs" style="display:flex;gap:8px;margin-top:12px;justify-content:center;">
+                            <div class="thumb-slot" id="thumb-0" style="width:70px;height:70px;border:2px dashed #cbd5e1;border-radius:8px;display:flex;align-items:center;justify-content:center;color:#94a3b8;font-size:0.7rem;">1</div>
+                            <div class="thumb-slot" id="thumb-1" style="width:70px;height:70px;border:2px dashed #cbd5e1;border-radius:8px;display:flex;align-items:center;justify-content:center;color:#94a3b8;font-size:0.7rem;">2</div>
+                            <div class="thumb-slot" id="thumb-2" style="width:70px;height:70px;border:2px dashed #cbd5e1;border-radius:8px;display:flex;align-items:center;justify-content:center;color:#94a3b8;font-size:0.7rem;">3</div>
+                        </div>
+                        <p style="font-size:0.78rem;color:#64748b;text-align:center;margin:6px 0 0;" id="cam-hint-text">Зробіть до 3 фото: прямо, трохи вліво, трохи вправо.</p>
+                        <button type="button" class="btn" style="margin-top:10px;background:#e2e8f0;color:#475569;" onclick="resetCameraCaptures()">Скинути фото</button>
                     </div>
                 </div>
+
                 <button type="submit" class="btn">Далі (Перевірка фото)</button>
             </form>
 
@@ -426,141 +449,190 @@
         // ... (Тут всі старі змінні та функції камери: video, startCamera, switchMode, etc. Залиш їх без змін) ...
         // КОПІЮЙ ВСІ ФУНКЦІЇ КАМЕРИ З МИНУЛОГО ВІДПОВІДІ СЮДИ
 
-        const video = document.getElementById('video');
-        const canvas = document.getElementById('canvas');
+        // ── Стан камери ──────────────────────────────────────────────────────────
+        const video       = document.getElementById('video');
+        const canvas      = document.getElementById('canvas');
         const photoOutput = document.getElementById('photo-output');
-        const hintText = document.getElementById('camera-hint');
-        const errorBox = document.getElementById('error-box');
+        const hintText    = document.getElementById('camera-hint');
+        const errorBox    = document.getElementById('error-box');
         const cameraSelect = document.getElementById('camera-select');
-        let stream = null;
-        let capturedCameraData = null;
+
+        let stream      = null;
         let currentMode = 'file';
 
-        // ... (Функції getVideoDevices, startCameraStream, switchMode і т.д. копіюй з попередньої версії) ...
+        // Multi-photo: масив до 3 base64 кадрів
+        let capturedFrames = [];
+        const MAX_FRAMES = 3;
+
+        // ── Утиліти ───────────────────────────────────────────────────────────────
+        function showLoader()  { document.getElementById('loader-container').style.display = 'flex'; }
+        function hideLoader()  { document.getElementById('loader-container').style.display = 'none'; }
+        function showError(m)  { errorBox.innerText = "⚠️ " + m; errorBox.classList.add('visible'); }
+        function clearError()  { errorBox.classList.remove('visible'); errorBox.innerText = ""; }
+        function getCookie(name) {
+            let v = null;
+            document.cookie.split(';').forEach(c => {
+                c = c.trim();
+                if (c.startsWith(name + '=')) v = decodeURIComponent(c.slice(name.length + 1));
+            });
+            return v;
+        }
+
+        // ── Камера ────────────────────────────────────────────────────────────────
         async function getVideoDevices() {
-            if (!navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) { return; }
-            try {
-                const devices = await navigator.mediaDevices.enumerateDevices();
-                const videoDevices = devices.filter(device => device.kind === 'videoinput');
-                cameraSelect.innerHTML = '';
-                if (videoDevices.length === 0) { cameraSelect.add(new Option("Камер не знайдено", "")); return; }
-                videoDevices.forEach((device, index) => { cameraSelect.add(new Option(device.label || `Камера ${index + 1}`, device.deviceId)); });
-                cameraSelect.onchange = () => { if (currentMode === 'camera') { stopCameraOnly(); startCameraStream(cameraSelect.value); } };
-            } catch (err) { console.error(err); }
+            if (!navigator.mediaDevices?.enumerateDevices) return;
+            const devices = await navigator.mediaDevices.enumerateDevices().catch(() => []);
+            const vd = devices.filter(d => d.kind === 'videoinput');
+            cameraSelect.innerHTML = '';
+            if (!vd.length) { cameraSelect.add(new Option("Камер не знайдено", "")); return; }
+            vd.forEach((d, i) => cameraSelect.add(new Option(d.label || `Камера ${i+1}`, d.deviceId)));
+            cameraSelect.onchange = () => { if (currentMode === 'camera') { stopCamera(); startCameraStream(cameraSelect.value); } };
         }
         getVideoDevices();
-        function showLoader() { document.getElementById('loader-container').style.display = 'flex'; }
-        function hideLoader() { document.getElementById('loader-container').style.display = 'none'; }
-        function showError(msg) { errorBox.innerText = "⚠️ " + msg; errorBox.classList.add('visible'); }
-        function clearError() { errorBox.classList.remove('visible'); errorBox.innerText = ""; }
-        function switchMode(mode) {
-            currentMode = mode; clearError();
-            const fileDiv = document.getElementById('file-mode'); const camDiv = document.getElementById('camera-mode');
-            const tabFile = document.getElementById('tab-file'); const tabCam = document.getElementById('tab-camera');
-            if (mode === 'file') {
-                fileDiv.classList.remove('hidden'); camDiv.classList.add('hidden');
-                tabFile.classList.add('active'); tabCam.classList.remove('active');
-                stopCamera(); capturedCameraData = null;
-            } else {
-                fileDiv.classList.add('hidden'); camDiv.classList.remove('hidden');
-                tabFile.classList.remove('active'); tabCam.classList.add('active');
-                startCameraStream(cameraSelect.value); document.getElementById('photo-file').value = "";
-            }
-        }
+
         async function startCameraStream(deviceId) {
             const constraints = { video: deviceId ? { deviceId: { exact: deviceId } } : { facingMode: "user" } };
-            try { stream = await navigator.mediaDevices.getUserMedia(constraints); video.srcObject = stream; video.classList.remove('hidden'); photoOutput.classList.add('hidden'); hintText.innerText = "Натисніть на відео"; } catch (err) { alert("Не вдалося отримати доступ до камери."); }
+            try {
+                stream = await navigator.mediaDevices.getUserMedia(constraints);
+                video.srcObject = stream;
+                video.classList.remove('hidden');
+                photoOutput.classList.add('hidden');
+            } catch { alert("Не вдалося отримати доступ до камери."); }
         }
-        function stopCameraOnly() { if (stream) { stream.getTracks().forEach(track => track.stop()); stream = null; } }
-        function stopCamera() { stopCameraOnly(); }
-        video.addEventListener('click', function () {
-            canvas.width = video.videoWidth; canvas.height = video.videoHeight;
-            const context = canvas.getContext('2d'); context.drawImage(video, 0, 0, canvas.width, canvas.height);
-            capturedCameraData = canvas.toDataURL('image/jpeg'); photoOutput.src = capturedCameraData;
-            video.classList.add('hidden'); photoOutput.classList.remove('hidden'); hintText.innerText = "Перезняти";
+
+        function stopCamera() {
+            if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; }
+        }
+
+        function switchMode(mode) {
+            currentMode = mode; clearError();
+            const fileDiv = document.getElementById('file-mode');
+            const camDiv  = document.getElementById('camera-mode');
+            if (mode === 'file') {
+                fileDiv.classList.remove('hidden'); camDiv.classList.add('hidden');
+                document.getElementById('tab-file').classList.add('active');
+                document.getElementById('tab-camera').classList.remove('active');
+                stopCamera(); capturedFrames = []; updateThumbs();
+            } else {
+                fileDiv.classList.add('hidden'); camDiv.classList.remove('hidden');
+                document.getElementById('tab-camera').classList.add('active');
+                document.getElementById('tab-file').classList.remove('active');
+                startCameraStream(cameraSelect.value);
+                ['photo-file-1','photo-file-2','photo-file-3'].forEach(id => {
+                    const el = document.getElementById(id);
+                    if (el) el.value = "";
+                });
+            }
+        }
+
+        // Знімаємо кадр по кліку на відео
+        video.addEventListener('click', function() {
+            if (capturedFrames.length >= MAX_FRAMES) {
+                showError(`Вже є ${MAX_FRAMES} фото. Скиньте щоб перезняти.`);
+                return;
+            }
+            canvas.width  = video.videoWidth;
+            canvas.height = video.videoHeight;
+            canvas.getContext('2d').drawImage(video, 0, 0);
+            const dataUrl = canvas.toDataURL('image/jpeg', 0.92);
+            capturedFrames.push(dataUrl);
+            updateThumbs();
+
+            const remaining = MAX_FRAMES - capturedFrames.length;
+            if (remaining > 0) {
+                hintText.innerText = `Фото ${capturedFrames.length} знято! Ще ${remaining} (або натисніть Далі)`;
+            } else {
+                hintText.innerText = `Всі 3 фото знято! Натисніть "Далі".`;
+            }
         });
-        photoOutput.addEventListener('click', function () { photoOutput.classList.add('hidden'); video.classList.remove('hidden'); capturedCameraData = null; hintText.innerText = "Зробити фото"; });
-        function getCookie(name) { let cookieValue = null; if (document.cookie && document.cookie !== '') { const cookies = document.cookie.split(';'); for (let i = 0; i < cookies.length; i++) { const cookie = cookies[i].trim(); if (cookie.substring(0, name.length + 1) === (name + '=')) { cookieValue = decodeURIComponent(cookie.substring(name.length + 1)); break; } } } return cookieValue; }
 
+        function updateThumbs() {
+            for (let i = 0; i < MAX_FRAMES; i++) {
+                const slot = document.getElementById(`thumb-${i}`);
+                if (!slot) continue;
+                if (capturedFrames[i]) {
+                    slot.innerHTML = `<img src="${capturedFrames[i]}" style="width:100%;height:100%;object-fit:cover;border-radius:6px;">`;
+                    slot.style.borderColor = '#7c3aed';
+                } else {
+                    slot.innerHTML = String(i + 1);
+                    slot.style.borderColor = '#cbd5e1';
+                }
+            }
+            const hintEl = document.getElementById('cam-hint-text');
+            if (hintEl) hintEl.textContent = capturedFrames.length > 0
+                ? `Знято: ${capturedFrames.length}/3. Можна відправляти або зняти ще.`
+                : 'Зробіть до 3 фото: прямо, трохи вліво, трохи вправо.';
+        }
 
-        // --- ЛОГІКА ДВОХ ЕТАПІВ ---
+        function resetCameraCaptures() {
+            capturedFrames = [];
+            updateThumbs();
+            hintText.innerText = 'Натисніть — зробити фото 1/3';
+        }
 
-        // STEP 1: Send Photo -> Get QR
+        // ── КРОК 1: Відправка фото → отримання QR ────────────────────────────────
         function handleStep1(event) {
-            // 1. Зупиняємо стандартну відправку форми ОДРАЗУ
             event.preventDefault();
-            clearError(); // Очищаємо старі помилки
+            clearError();
 
-            const usernameInput = document.getElementById('username');
-            const username = usernameInput.value;
-
-            // 2. ПЕРЕВІРКА НА КИРИЛИЦЮ (Regex)
-            const latinRegex = /^[a-zA-Z0-9_]+$/;
-
-            if (!latinRegex.test(username)) {
-                showError("Будь ласка, використовуйте тільки латинські літери (A-Z) та цифри.");
-                return; // Зупиняємо виконання, але сторінка не перезавантажиться
+            const username = document.getElementById('username').value.trim();
+            if (!/^[a-zA-Z0-9_]+$/.test(username)) {
+                showError("Тільки латинські літери (A-Z) та цифри.");
+                return;
             }
 
-            const form = document.getElementById('register-step1-form');
-            // Створюємо FormData тільки якщо валідація пройшла
-            const formData = new FormData(form);
+            const formData = new FormData();
+            formData.append('username', username);
+            formData.append('csrfmiddlewaretoken', getCookie('csrftoken'));
 
-            // 3. Логіка фото/камери
             if (currentMode === 'camera') {
-                if (!capturedCameraData) {
-                    showError("Зробіть фото!");
-                    return;
-                }
-                formData.append('camera_data', capturedCameraData);
-                formData.delete('photo'); // Видаляємо пусте поле файлу, якщо воно там є
+                if (!capturedFrames.length) { showError("Зробіть хоча б одне фото!"); return; }
+                // Відправляємо всі кадри як camera_data_1, camera_data_2, camera_data_3
+                capturedFrames.forEach((frame, i) => {
+                    formData.append(`camera_data_${i + 1}`, frame);
+                });
             } else {
-                const fileInput = document.getElementById('photo-file');
-                if (fileInput.files.length === 0) {
-                    showError("Виберіть файл!");
-                    return;
-                }
+                const f1 = document.getElementById('photo-file-1');
+                if (!f1 || !f1.files.length) { showError("Виберіть хоча б перше фото!"); return; }
+                ['photo-file-1', 'photo-file-2', 'photo-file-3'].forEach((id, i) => {
+                    const el = document.getElementById(id);
+                    if (el && el.files.length) {
+                        formData.append(`photo_${i + 1}`, el.files[0]);
+                    }
+                });
             }
 
             showLoader();
-
-            // 4. Відправка на сервер
             fetch("{% url 'register_step1' %}", {
                 method: 'POST',
                 body: formData,
                 headers: { 'X-CSRFToken': getCookie('csrftoken') }
             })
-                .then(res => res.json())
-                .then(data => {
-                    hideLoader();
-                    if (data.success) {
-                        // Перемикаємо інтерфейс на Етап 2
-                        document.getElementById('register-step1-form').style.display = 'none';
-                        document.getElementById('qr-section').style.display = 'block';
-                        document.getElementById('qr-img').src = "data:image/png;base64," + data.qr_code;
-
-                        // Ховаємо лінк входу, щоб не відволікати
-                        const loginLink = document.getElementById('login-link');
-                        if (loginLink) loginLink.style.display = 'none';
-                    } else {
-                        if (data.error === 'no_face_detected') {
-                            showError("Обличчя не знайдено! Спробуйте інше фото.");
-                        } else {
-                            showError(data.message || data.error);
-                        }
+            .then(r => r.json())
+            .then(data => {
+                hideLoader();
+                if (data.success) {
+                    document.getElementById('register-step1-form').style.display = 'none';
+                    document.getElementById('qr-section').style.display = 'block';
+                    document.getElementById('qr-img').src = "data:image/png;base64," + data.qr_code;
+                    const loginLink = document.getElementById('login-link');
+                    if (loginLink) loginLink.style.display = 'none';
+                    // Показуємо скільки фото прийнято
+                    const stepTitle = document.querySelector('#qr-section .step-title');
+                    if (stepTitle && data.photo_count) {
+                        stepTitle.textContent = `Крок 2: Налаштування 2FA (прийнято ${data.photo_count} фото)`;
                     }
-                })
-                .catch(err => {
-                    hideLoader();
-                    console.error(err);
-                    showError("Помилка мережі");
-                });
+                } else {
+                    showError(data.error || data.message || "Невідома помилка");
+                }
+            })
+            .catch(() => { hideLoader(); showError("Помилка мережі"); });
         }
 
-        // STEP 2: Send OTP -> Finish
+        // ── КРОК 2: OTP → Завершення ──────────────────────────────────────────────
         function handleStep2(event) {
             event.preventDefault(); clearError();
-            const code = document.getElementById('otp-code').value;
+            const code = document.getElementById('otp-code').value.trim();
             if (code.length < 6) { showError("Введіть 6 цифр коду"); return; }
 
             const formData = new FormData();
@@ -568,19 +640,21 @@
 
             showLoader();
             fetch("{% url 'register_step2' %}", {
-                method: 'POST', body: formData, headers: { 'X-CSRFToken': getCookie('csrftoken') }
+                method: 'POST',
+                body: formData,
+                headers: { 'X-CSRFToken': getCookie('csrftoken') }
             })
-                .then(res => res.json())
-                .then(data => {
-                    hideLoader();
-                    if (data.success) {
-                        alert("Вітаємо! Реєстрація успішна.");
-                        window.location.href = "{% url 'user_list' %}";
-                    } else {
-                        showError(data.error);
-                    }
-                })
-                .catch(err => { hideLoader(); showError("Помилка мережі"); });
+            .then(r => r.json())
+            .then(data => {
+                hideLoader();
+                if (data.success) {
+                    alert(`Вітаємо! Реєстрація успішна.\nПоріг верифікації: ${data.threshold ?? 'авто'}`);
+                    window.location.href = "{% url 'user_list' %}";
+                } else {
+                    showError(data.error);
+                }
+            })
+            .catch(() => { hideLoader(); showError("Помилка мережі"); });
         }
     </script>
 </body>

@@ -25,7 +25,12 @@ SECRET_KEY = 'django-insecure-z*2&%a2#1h_9$lrg#kz7k8$4tiarpp!&%n&1w86f4*@u(bjj9o
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = ['manly-sanctity-fantasy.ngrok-free.dev', '127.0.0.1', 'localhost']
+# settings.py
+
+CSRF_TRUSTED_ORIGINS = [
+    'https://manly-sanctity-fantasy.ngrok-free.dev',
+]
 
 
 # Application definition

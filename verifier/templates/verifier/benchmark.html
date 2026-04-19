@@ -14,6 +14,7 @@
             --success-color: #22c55e;
             --error-color: #ef4444;
             --warning-color: #eab308;
+            --embed-color: #7c3aed;
         }
 
         body {
@@ -28,19 +29,14 @@
 
         .container {
             width: 100%;
-            max-width: 900px;
+            max-width: 920px;
             background: var(--card-bg);
             padding: 40px;
             border-radius: 20px;
             box-shadow: 0 10px 30px rgba(0,0,0,0.08);
         }
 
-        h1 {
-            font-size: 2rem;
-            margin-bottom: 10px;
-            color: #0f172a;
-            font-weight: 800;
-        }
+        h1 { font-size: 2rem; margin-bottom: 10px; color: #0f172a; font-weight: 800; }
 
         .subtitle {
             color: #64748b;
@@ -50,7 +46,7 @@
             padding-left: 15px;
         }
 
-        /* Панель керування */
+        /* ── Панель керування ── */
         .controls-card {
             background: #f1f5f9;
             padding: 25px;
@@ -59,14 +55,10 @@
             flex-wrap: wrap;
             align-items: flex-end;
             gap: 20px;
-            margin-bottom: 30px;
+            margin-bottom: 20px;
         }
 
-        .input-group {
-            display: flex;
-            flex-direction: column;
-            gap: 8px;
-        }
+        .input-group { display: flex; flex-direction: column; gap: 8px; }
 
         label {
             font-weight: 700;
@@ -86,11 +78,81 @@
             transition: border-color 0.2s;
         }
 
-        input:focus, select:focus {
-            outline: none;
-            border-color: var(--primary-color);
+        input:focus, select:focus { outline: none; border-color: var(--primary-color); }
+
+        /* ── Режим верифікації ── */
+        .mode-card {
+            background: #f8f5ff;
+            border: 2px solid #ddd6fe;
+            padding: 18px 24px;
+            border-radius: 12px;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            gap: 20px;
+            flex-wrap: wrap;
         }
 
+        .mode-card label { color: #5b21b6; font-size: 0.9rem; }
+
+        .toggle-wrapper {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .toggle-label { font-size: 0.95rem; font-weight: 600; color: #374151; }
+        .toggle-label.active { color: var(--embed-color); }
+
+        .toggle {
+            position: relative;
+            width: 52px;
+            height: 28px;
+        }
+
+        .toggle input { opacity: 0; width: 0; height: 0; }
+
+        .toggle-slider {
+            position: absolute;
+            cursor: pointer;
+            inset: 0;
+            background: #cbd5e1;
+            border-radius: 28px;
+            transition: .3s;
+        }
+
+        .toggle-slider:before {
+            content: "";
+            position: absolute;
+            height: 20px;
+            width: 20px;
+            left: 4px;
+            bottom: 4px;
+            background: white;
+            border-radius: 50%;
+            transition: .3s;
+        }
+
+        .toggle input:checked + .toggle-slider { background: var(--embed-color); }
+        .toggle input:checked + .toggle-slider:before { transform: translateX(24px); }
+
+        .mode-badge {
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 0.8rem;
+            font-weight: 700;
+            background: #ddd6fe;
+            color: #5b21b6;
+        }
+
+        .mode-hint {
+            font-size: 0.82rem;
+            color: #64748b;
+            flex: 1;
+            min-width: 200px;
+        }
+
+        /* ── Кнопка запуску ── */
         .btn-start {
             background: var(--primary-color);
             color: white;
@@ -100,16 +162,16 @@
             font-weight: 700;
             cursor: pointer;
             transition: all 0.2s;
-            box-shadow: 0 4px 12px rgba(37, 99, 235, 0.2);
+            box-shadow: 0 4px 12px rgba(37,99,235,0.2);
+            white-space: nowrap;
         }
 
-        .btn-start:hover {
-            background: #1d4ed8;
-            transform: translateY(-2px);
-        }
+        .btn-start:hover { background: #1d4ed8; transform: translateY(-2px); }
+        .btn-start:disabled { background: #94a3b8; cursor: not-allowed; transform: none; }
 
-        /* Прогрес-бар */
+        /* ── Прогрес ── */
         .progress-section { margin-bottom: 30px; }
+
         .progress-info {
             display: flex;
             justify-content: space-between;
@@ -132,18 +194,32 @@
             transition: width 0.4s cubic-bezier(0.4, 0, 0.2, 1);
         }
 
-        /* Термінал результатів */
+        #progress-bar.embed-mode {
+            background: linear-gradient(90deg, #7c3aed, #a78bfa);
+        }
+
+        /* ── Термінал ── */
         .terminal-header {
             background: #1e293b;
             padding: 10px 15px;
             border-radius: 10px 10px 0 0;
             display: flex;
-            gap: 6px;
+            align-items: center;
+            gap: 8px;
         }
+
         .dot { width: 10px; height: 10px; border-radius: 50%; }
-        .dot.red { background: #ff5f56; }
+        .dot.red    { background: #ff5f56; }
         .dot.yellow { background: #ffbd2e; }
-        .dot.green { background: #27c93f; }
+        .dot.green  { background: #27c93f; }
+
+        .terminal-mode-label {
+            margin-left: auto;
+            font-size: 0.75rem;
+            font-weight: 700;
+            color: #94a3b8;
+            letter-spacing: 1px;
+        }
 
         .terminal {
             background: var(--terminal-bg);
@@ -152,40 +228,51 @@
             border-radius: 0 0 12px 12px;
             font-family: 'Fira Code', 'Cascadia Code', monospace;
             font-size: 0.85rem;
-            height: 320px;
+            height: 340px;
             overflow-y: auto;
             line-height: 1.6;
             border: 1px solid #1e293b;
         }
 
-        .terminal b { color: #38bdf8; }
-        .res-true { color: var(--success-color); font-weight: bold; }
-        .res-false { color: var(--error-color); font-weight: bold; }
-        .res-noisy { color: var(--warning-color); }
+        .terminal b   { color: #38bdf8; }
+        .res-true     { color: var(--success-color); font-weight: bold; }
+        .res-false    { color: var(--error-color); font-weight: bold; }
+        .res-noisy    { color: var(--warning-color); }
+        .res-info     { color: #a78bfa; }
 
-        /* Картка фінального результату */
+        /* ── Результат ── */
         .result-card {
             margin-top: 30px;
-            text-align: center;
             padding: 25px;
             border-radius: 15px;
             border: 2px dashed #e2e8f0;
             background: #fdfdfd;
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            gap: 30px;
+            text-align: center;
         }
 
-        #final-accuracy {
-            font-size: 2.5rem;
+        .result-stat { display: flex; flex-direction: column; align-items: center; gap: 4px; }
+
+        .result-stat .val {
+            font-size: 2.2rem;
             font-weight: 900;
             color: var(--primary-color);
-            display: block;
-            margin-bottom: 5px;
         }
 
-        #skipped-info {
+        .result-stat .val.embed { color: var(--embed-color); }
+
+        .result-stat .lbl {
+            font-size: 0.8rem;
             color: #64748b;
-            font-size: 0.9rem;
-            font-weight: 500;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
         }
+
+        #skipped-info { color: #64748b; font-size: 0.9rem; font-weight: 500; }
     </style>
 </head>
 <body>
@@ -197,29 +284,51 @@
 <div class="container">
     <h1>Метрики якості системи</h1>
     <div class="subtitle">
-        Дослідження: Стійкість ArcFace + RetinaFace до оклюзій на датасетах AFDB та MFR2 <br>
+        Дослідження: Стійкість ArcFace + RetinaFace до оклюзій на датасетах AFDB та MFR2<br>
         Магістерська робота: <b>Віталій Ковальковський</b>
     </div>
 
+    <!-- Режим верифікації -->
+    <div class="mode-card">
+        <div>
+            <label>РЕЖИМ ВЕРИФІКАЦІЇ</label>
+            <div style="margin-top:8px;" class="toggle-wrapper">
+                <span class="toggle-label" id="lbl-standard">Стандартний</span>
+                <label class="toggle">
+                    <input type="checkbox" id="mode-toggle" onchange="onModeChange()">
+                    <span class="toggle-slider"></span>
+                </label>
+                <span class="toggle-label" id="lbl-embed">Multi-Reference Embedding</span>
+            </div>
+        </div>
+        <span class="mode-badge" id="mode-badge">1 фото → 1 фото</span>
+        <p class="mode-hint" id="mode-hint">
+            Стандартний: DeepFace.verify() порівнює одне еталонне фото з одним тестовим.
+        </p>
+    </div>
+
+    <!-- Параметри -->
     <div class="controls-card">
         <div class="input-group">
             <label for="dataset">Датасет:</label>
             <select id="dataset">
-                <option value="afdb">AFDB (Kaggle)</option>
                 <option value="mfr2" selected>MFR2 (Локальний)</option>
+                <option value="afdb">AFDB (Kaggle)</option>
+                <option value="rmfd">RMFD (реальні маски)</option>
             </select>
         </div>
         <div class="input-group">
-            <label for="test-limit">Вибірка (осіб):</label>
-            <input type="number" id="test-limit" value="" min="1" max="500">
+            <label for="test-limit">Вибірка (пар):</label>
+            <input type="number" id="test-limit" value="50" min="1" max="500">
         </div>
         <div class="input-group">
-            <label for="threshold">Поріг ($Threshold$):</label>
-            <input type="number" id="threshold" value="0.75" step="0.01" min="0.1" max="1.0">
+            <label for="threshold">Поріг (Threshold):</label>
+            <input type="number" id="threshold" value="0.68" step="0.01" min="0.1" max="1.0">
         </div>
-        <button class="btn-start" onclick="startBenchmark()">Запустити аналіз</button>
+        <button class="btn-start" id="btn-start" onclick="startBenchmark()">Запустити аналіз</button>
     </div>
 
+    <!-- Прогрес -->
     <div class="progress-section">
         <div class="progress-info">
             <span>Статус опрацювання</span>
@@ -230,81 +339,152 @@
         </div>
     </div>
 
+    <!-- Термінал -->
     <div class="terminal-header">
-        <div class="dot red"></div><div class="dot yellow"></div><div class="dot green"></div>
+        <div class="dot red"></div>
+        <div class="dot yellow"></div>
+        <div class="dot green"></div>
+        <span class="terminal-mode-label" id="terminal-mode-label">STANDARD MODE</span>
     </div>
     <div id="status-log" class="terminal">Готовність до ініціалізації експерименту...</div>
-    
-    <div class="result-card">
-        <span id="final-accuracy"></span>
-        <span id="skipped-info"></span>
+
+    <!-- Результат -->
+    <div class="result-card" id="result-card">
+        <div class="result-stat">
+            <span class="val" id="final-accuracy"></span>
+            <span class="lbl">Точність</span>
+        </div>
+        <div class="result-stat">
+            <span class="val" id="final-correct" style="font-size:1.6rem;"></span>
+            <span class="lbl">Правильних</span>
+        </div>
+        <div class="result-stat">
+            <span class="val" id="final-total" style="font-size:1.6rem;"></span>
+            <span class="lbl">Всього пар</span>
+        </div>
+        <div class="result-stat">
+            <span class="val" id="final-skipped" style="font-size:1.6rem;color:#94a3b8"></span>
+            <span class="lbl">Відсіяно</span>
+        </div>
     </div>
 </div>
 
 <script>
+    let currentES = null;
+
+    function onModeChange() {
+        const isEmbed = document.getElementById('mode-toggle').checked;
+        const badge   = document.getElementById('mode-badge');
+        const hint    = document.getElementById('mode-hint');
+        const bar     = document.getElementById('progress-bar');
+        const tlbl    = document.getElementById('terminal-mode-label');
+        const lblEmb  = document.getElementById('lbl-embed');
+        const lblStd  = document.getElementById('lbl-standard');
+
+        if (isEmbed) {
+            badge.textContent = 'N фото → усереднений вектор';
+            hint.textContent  = 'Multi-Reference: будує embedding з усіх незамаскованих фото особи, усереднює вектори. Точніший при масках.';
+            bar.classList.add('embed-mode');
+            tlbl.textContent  = 'MULTI-REFERENCE EMBEDDING';
+            lblEmb.classList.add('active');
+            lblStd.classList.remove('active');
+            // М'якший поріг за замовчуванням для embedding-режиму
+            document.getElementById('threshold').value = '0.68';
+        } else {
+            badge.textContent = '1 фото → 1 фото';
+            hint.textContent  = 'Стандартний: DeepFace.verify() порівнює одне еталонне фото з одним тестовим.';
+            bar.classList.remove('embed-mode');
+            tlbl.textContent  = 'STANDARD MODE';
+            lblStd.classList.add('active');
+            lblEmb.classList.remove('active');
+            document.getElementById('threshold').value = '0.75';
+        }
+    }
+
     function startBenchmark() {
-        const dataset = document.getElementById('dataset').value;
-        const limit = document.getElementById('test-limit').value;
-        const thresh = document.getElementById('threshold').value;
-        const bar = document.getElementById('progress-bar');
+        if (currentES) { currentES.close(); currentES = null; }
+
+        const dataset    = document.getElementById('dataset').value;
+        const limit      = document.getElementById('test-limit').value;
+        const thresh     = document.getElementById('threshold').value;
+        const useEmbed   = document.getElementById('mode-toggle').checked;
+
+        const bar         = document.getElementById('progress-bar');
         const percentText = document.getElementById('progress-percent');
-        const log = document.getElementById('status-log');
-        const resultText = document.getElementById('final-accuracy');
-        const skippedText = document.getElementById('skipped-info');
-        const finishAudio = document.getElementById('finish-sound');
-        
-        // Очищення інтерфейсу
-        log.innerHTML = `<span style="color: #94a3b8;">[SYS] Підключення до ${dataset.toUpperCase()}...</span><br>`;
-        log.innerHTML += `<span style="color: #94a3b8;">[SYS] Встановлено ліміт: ${limit}, Поріг: ${thresh}</span><br><br>`;
-        bar.style.width = "0%";
-        percentText.innerText = "0%";
-        resultText.innerText = "";
-        skippedText.innerText = "";
+        const log         = document.getElementById('status-log');
+        const btnStart    = document.getElementById('btn-start');
 
-        // Ініціалізація SSE
-        const eventSource = new EventSource(`/benchmark-stream/?limit=${limit}&threshold=${thresh}&dataset=${dataset}`);
+        // Очищення
+        log.innerHTML = `<span style="color:#94a3b8">[SYS] Датасет: ${dataset.toUpperCase()} | Ліміт: ${limit} | Поріг: ${thresh} | Режим: ${useEmbed ? 'EMBEDDING' : 'STANDARD'}</span><br><br>`;
+        bar.style.width = '0%';
+        percentText.innerText = '0%';
+        btnStart.disabled = true;
+        btnStart.textContent = 'Виконується...';
 
-        eventSource.onmessage = function(event) {
+        ['final-accuracy','final-correct','final-total','final-skipped'].forEach(id => {
+            document.getElementById(id).textContent = '';
+        });
+
+        const url = `/benchmark-stream/?limit=${limit}&threshold=${thresh}&dataset=${dataset}&use_embedding=${useEmbed}`;
+        currentES = new EventSource(url);
+
+        currentES.onmessage = function(event) {
             const data = JSON.parse(event.data);
-            
-            bar.style.width = data.progress + "%";
-            percentText.innerText = data.progress + "%";
-            
+
+            if (data.progress !== undefined) {
+                bar.style.width = data.progress + '%';
+                percentText.innerText = data.progress + '%';
+            }
+
+            if (data.status === 'info') {
+                log.innerHTML += `<span class="res-info">[INFO] ${data.msg}</span><br>`;
+            }
+
             if (data.status === 'processing') {
-                const resClass = data.result === 'TRUE' ? 'res-true' : 'res-false';
-                // Вивід ID, дистанції та результату
-                log.innerHTML += `> ID: <b>${data.person}</b> | Dist: <i>${data.dist}</i> | <span class="${resClass}">${data.result}</span><br>`;
+                const cls = data.result === 'TRUE' ? 'res-true' : 'res-false';
+                log.innerHTML += `> ID: <b>${data.person}</b> | Dist: <i>${data.dist}</i> | <span class="${cls}">${data.result}</span><br>`;
                 log.scrollTop = log.scrollHeight;
             }
-            
+
             if (data.status === 'noisy') {
                 log.innerHTML += `> ID: <i>${data.person}</i> | <span class="res-noisy">SKIP (Identity Validation Failed)</span><br>`;
                 log.scrollTop = log.scrollHeight;
             }
-            
+
             if (data.status === 'completed') {
-                resultText.innerHTML = `Точність: ${data.accuracy}`;
-                skippedText.innerText = `Експеримент завершено. Відсіяно ${data.skipped} некоректних пар з вибірки.`;
-                log.innerHTML += `<br><b style="color: var(--success-color)">[FINISH] Аналіз завершено успішно. Всі дані збережено.</b>`;
-                
-                // Звуковий сигнал завершення
-                finishAudio.play().catch(e => console.log("Sound blocked by browser"));
-                
-                eventSource.close();
+                const accEl = document.getElementById('final-accuracy');
+                accEl.textContent = data.accuracy;
+                accEl.className   = 'val' + (useEmbed ? ' embed' : '');
+
+                document.getElementById('final-correct').textContent = data.correct ?? '—';
+                document.getElementById('final-total').textContent   = data.total   ?? '—';
+                document.getElementById('final-skipped').textContent = data.skipped ?? '—';
+
+                log.innerHTML += `<br><b style="color:var(--success-color)">[FINISH] Аналіз завершено. Режим: ${data.mode}</b>`;
+                document.getElementById('finish-sound').play().catch(() => {});
+
+                currentES.close();
+                currentES = null;
+                btnStart.disabled = false;
+                btnStart.textContent = 'Запустити аналіз';
             }
 
             if (data.status === 'error') {
-                log.innerHTML += `<br><span style="color: var(--error-color)">[ERROR] ${data.message}</span>`;
-                eventSource.close();
+                log.innerHTML += `<br><span style="color:var(--error-color)">[ERROR] ${data.message}</span>`;
+                currentES.close();
+                currentES = null;
+                btnStart.disabled = false;
+                btnStart.textContent = 'Запустити аналіз';
             }
         };
 
-        eventSource.onerror = function() {
-            log.innerHTML += `<br><span style="color: var(--error-color)">[FATAL] Помилка з'єднання з сервером.</span>`;
-            eventSource.close();
+        currentES.onerror = function() {
+            log.innerHTML += `<br><span style="color:var(--error-color)">[FATAL] Помилка з'єднання з сервером.</span>`;
+            if (currentES) { currentES.close(); currentES = null; }
+            btnStart.disabled = false;
+            btnStart.textContent = 'Запустити аналіз';
         };
     }
 </script>
-
 </body>
 </html>
