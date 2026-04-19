@@ -301,13 +301,18 @@ def benchmark_page(request):
 
 
 def benchmark_stream(request):
-    limit = int(request.GET.get('limit', 50))
-    threshold = request.GET.get('threshold', 0.75)
-    dataset = request.GET.get('dataset', 'mfr2')
+    limit         = int(request.GET.get('limit', 50))
+    threshold     = request.GET.get('threshold', 0.75)
+    dataset       = request.GET.get('dataset', 'mfr2')
     use_embedding = request.GET.get('use_embedding', 'false').lower() == 'true'
+    rmfd_path     = request.GET.get('rmfd_path', 'datasets/rmfd').strip()
 
     return StreamingHttpResponse(
-        run_accuracy_generator(limit, threshold, dataset, use_embedding=use_embedding),
+        run_accuracy_generator(
+            limit, threshold, dataset,
+            use_embedding=use_embedding,
+            rmfd_path=rmfd_path,
+        ),
         content_type='text/event-stream'
     )
 

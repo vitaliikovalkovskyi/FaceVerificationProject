@@ -59,27 +59,46 @@
 </div>
 
 <script>
-    const video = document.getElementById('video');
+    const video  = document.getElementById('video');
     const canvas = document.getElementById('overlay');
-    const ctx = canvas.getContext('2d');
-    const instr = document.getElementById('instr');
-    const arrow = document.getElementById('arrow');
-    
-    let currentStepIndex = 0, livenessDone = false;
-    
-    // Пул завдань та генерація випадкової послідовності
+    const ctx    = canvas.getContext('2d');
+    const instr  = document.getElementById('instr');
+    const arrow  = document.getElementById('arrow');
+
+    // ── Стан машини ──────────────────────────────────────────────────────────
+    let currentStepIndex = 0;
+
+    // Три фази після завершення всіх завдань:
+    //   'tasks'    — виконуємо завдання
+    //   'return'   — чекаємо повернення голови в центр
+    //   'stable'   — відраховуємо стабільні кадри в центрі
+    //   'done'     — фото знято, чекаємо відповідь сервера
+    let phase = 'tasks';
+
+    // Лічильник кадрів коли ніс стабільно в центрі
+    let centerFrames = 0;
+    const CENTER_FRAMES_NEEDED = 8;   // ~0.27с при 30fps — достатньо щоб рух зупинився
+    const CENTER_ZONE = 0.10;         // nose.x в межах 0.5 ± 0.10 = центр
+
+    // ── Пул завдань ───────────────────────────────────────────────────────────
     const taskPool = [
-        { id: 'blink', text: "Кліпніть очима", icon: "👁️" },
-        { id: 'left', text: "Поверніть голову ліворуч", icon: "⬅️" },
-        { id: 'right', text: "Поверніть голову праворуч", icon: "➡️" }
+        { id: 'blink', text: "Кліпніть очима" },
+        { id: 'left',  text: "Поверніть голову ліворуч" },
+        { id: 'right', text: "Поверніть голову праворуч" }
     ];
-    
-    // Формуємо чергу: 1.Align (завжди) + 2 випадкових з пулу
+
     let taskQueue = [{ id: 'align', text: "Впишіть обличчя в овал" }];
-    const shuffled = taskPool.sort(() => 0.5 - Math.random()).slice(0, 2);
+    const shuffled = [...taskPool].sort(() => 0.5 - Math.random()).slice(0, 2);
     taskQueue = taskQueue.concat(shuffled);
 
-    // Створюємо індикатори кроків (точки)
+    // Перевіряємо чи остання задача — поворот голови
+    // (для blink центрування не потрібне — голова і так прямо)
+    function lastTaskIsHeadTurn() {
+        const last = taskQueue[taskQueue.length - 1];
+        return last.id === 'left' || last.id === 'right';
+    }
+
+    // ── Dots ──────────────────────────────────────────────────────────────────
     const dotsContainer = document.getElementById('dots-container');
     taskQueue.forEach((_, i) => {
         const dot = document.createElement('div');
@@ -88,120 +107,228 @@
         dotsContainer.appendChild(dot);
     });
 
-    const faceMesh = new FaceMesh({ locateFile: (f) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${f}` });
-    faceMesh.setOptions({ maxNumFaces: 1, refineLandmarks: true, minDetectionConfidence: 0.7 });
-    
+    // ── FaceMesh ──────────────────────────────────────────────────────────────
+    const faceMesh = new FaceMesh({
+        locateFile: (f) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${f}`
+    });
+    faceMesh.setOptions({
+        maxNumFaces: 1,
+        refineLandmarks: true,
+        minDetectionConfidence: 0.7
+    });
+
     faceMesh.onResults(results => {
-        canvas.width = video.videoWidth; canvas.height = video.videoHeight;
+        // ── Малюємо овальну маску ─────────────────────────────────────────────
+        canvas.width  = video.videoWidth;
+        canvas.height = video.videoHeight;
         ctx.clearRect(0, 0, canvas.width, canvas.height);
-        
-        // Маска
+
         ctx.fillStyle = "rgba(248, 250, 252, 0.7)";
         ctx.fillRect(0, 0, canvas.width, canvas.height);
         ctx.globalCompositeOperation = 'destination-out';
-        ctx.beginPath(); ctx.ellipse(canvas.width/2, canvas.height/2, 110, 150, 0, 0, 2 * Math.PI); ctx.fill();
+        ctx.beginPath();
+        ctx.ellipse(canvas.width / 2, canvas.height / 2, 110, 150, 0, 0, 2 * Math.PI);
+        ctx.fill();
         ctx.globalCompositeOperation = 'source-over';
-        ctx.strokeStyle = livenessDone ? "#10b981" : "#4f46e5"; ctx.lineWidth = 4; ctx.stroke();
 
-        if (livenessDone || !results.multiFaceLandmarks?.[0]) return;
+        // Колір овалу залежить від фази
+        if (phase === 'stable') {
+            // Зелений з прогресом — показуємо що рахуємо
+            const progress = centerFrames / CENTER_FRAMES_NEEDED;
+            ctx.strokeStyle = `hsl(${Math.round(240 + progress * 120)}, 80%, 50%)`;
+        } else if (phase === 'done') {
+            ctx.strokeStyle = "#10b981";
+        } else {
+            ctx.strokeStyle = "#4f46e5";
+        }
+        ctx.lineWidth = 4;
+        ctx.stroke();
+
+        // Якщо фото вже знято або немає landmarks — нічого далі не робимо
+        if (phase === 'done' || !results.multiFaceLandmarks?.[0]) return;
+
         const landmarks = results.multiFaceLandmarks[0];
-        const nose = landmarks[1], eye = landmarks[159].y - landmarks[145].y;
-        
-        const currentTask = taskQueue[currentStepIndex];
+        const nose = landmarks[1];
+        const eyeGap = landmarks[159].y - landmarks[145].y;
+        const noseX  = nose.x;  // 0 = лівий край відео, 1 = правий (відео дзеркальне)
 
-        // Логіка виконання поточного завдання
-        let success = false;
-        if (currentTask.id === 'align') {
-            if (Math.abs(nose.x - 0.5) < 0.08) success = true;
-        } else if (currentTask.id === 'blink') {
-            if (Math.abs(eye) < 0.012) success = true;
-        } else if (currentTask.id === 'left') {
-            arrow.innerText = "⬅️"; arrow.classList.add('visible');
-            if (nose.x > 0.65) success = true; // Відео дзеркальне: ніс вправо = поворот ліворуч
-        } else if (currentTask.id === 'right') {
-            arrow.innerText = "➡️"; arrow.classList.add('visible');
-            if (nose.x < 0.35) success = true;
+        // ── ФАЗА 1: виконуємо завдання ────────────────────────────────────────
+        if (phase === 'tasks') {
+            const task = taskQueue[currentStepIndex];
+            let success = false;
+
+            if (task.id === 'align') {
+                if (Math.abs(noseX - 0.5) < 0.08) success = true;
+
+            } else if (task.id === 'blink') {
+                if (Math.abs(eyeGap) < 0.012) success = true;
+
+            } else if (task.id === 'left') {
+                arrow.innerText = "⬅️";
+                arrow.classList.add('visible');
+                // Дзеркальне відео: ніс іде вправо (x > 0.65) = голова ліворуч
+                if (noseX > 0.65) success = true;
+
+            } else if (task.id === 'right') {
+                arrow.innerText = "➡️";
+                arrow.classList.add('visible');
+                if (noseX < 0.35) success = true;
+            }
+
+            if (success) {
+                document.getElementById(`d${currentStepIndex}`).className = 'dot done';
+                currentStepIndex++;
+                arrow.classList.remove('visible');
+
+                if (currentStepIndex < taskQueue.length) {
+                    // Є ще завдання — переходимо до наступного
+                    document.getElementById(`d${currentStepIndex}`).className = 'dot active';
+                    instr.innerText = taskQueue[currentStepIndex].text;
+
+                } else {
+                    // Всі завдання виконані
+                    const lastTask = taskQueue[taskQueue.length - 1];
+                    const needsReturn = lastTask.id === 'left' || lastTask.id === 'right';
+
+                    if (needsReturn) {
+                        // Після повороту — чекаємо повернення в центр
+                        phase = 'return';
+                        centerFrames = 0;
+                        instr.innerText = "Поверніть голову прямо...";
+                    } else {
+                        // Після кліпання — голова і так прямо, одразу рахуємо стабільність
+                        phase = 'stable';
+                        centerFrames = 0;
+                        instr.innerText = "Не рухайтесь...";
+                    }
+                }
+            }
+            return;
         }
 
-        if (success) {
-            document.getElementById(`d${currentStepIndex}`).className = 'dot done';
-            currentStepIndex++;
-            arrow.classList.remove('visible');
-            
-            if (currentStepIndex < taskQueue.length) {
-                const next = taskQueue[currentStepIndex];
-                document.getElementById(`d${currentStepIndex}`).className = 'dot active';
-                instr.innerText = next.text;
-            } else {
-                livenessDone = true;
-                instr.innerText = "ГОТОВО! ПЕРЕВІРКА...";
-                setTimeout(autoVerify, 400);
+        // ── ФАЗА 2: чекаємо повернення в центр ───────────────────────────────
+        // (тільки якщо остання дія була поворот)
+        if (phase === 'return') {
+            const inCenter = Math.abs(noseX - 0.5) < CENTER_ZONE;
+            if (inCenter) {
+                // Голова повернулась — тепер рахуємо стабільні кадри
+                phase = 'stable';
+                centerFrames = 1;
+                instr.innerText = "Не рухайтесь...";
             }
+            return;
+        }
+
+        // ── ФАЗА 3: відраховуємо стабільні кадри в центрі ────────────────────
+        if (phase === 'stable') {
+            const inCenter = Math.abs(noseX - 0.5) < CENTER_ZONE;
+
+            if (inCenter) {
+                centerFrames++;
+
+                // Показуємо зворотний відлік
+                const remaining = CENTER_FRAMES_NEEDED - centerFrames;
+                if (remaining > 0) {
+                    instr.innerText = `Стоп... (${remaining})`;
+                }
+
+                if (centerFrames >= CENTER_FRAMES_NEEDED) {
+                    // Голова стабільно в центрі — ЗНІМАЄМО ФОТО
+                    phase = 'done';
+                    instr.innerText = "ГОТОВО! ПЕРЕВІРКА...";
+                    captureAndVerify();
+                }
+            } else {
+                // Голова знову рухнулась — скидаємо лічильник
+                centerFrames = 0;
+                instr.innerText = "Не рухайтесь...";
+            }
+            return;
         }
     });
 
-async function autoVerify() {
-    const loader = document.getElementById('loader');
-    loader.style.display = 'flex';
-    
-    const tempCanvas = document.createElement('canvas');
-    tempCanvas.width = video.videoWidth;
-    tempCanvas.height = video.videoHeight;
-    tempCanvas.getContext('2d').drawImage(video, 0, 0);
-    
-    const fd = new FormData();
-    fd.append('username', '{{ user.username }}');
-    fd.append('image_data', tempCanvas.toDataURL('image/jpeg'));
+    // ── Знімаємо фото і відправляємо на сервер ────────────────────────────────
+    function captureAndVerify() {
+        const tempCanvas = document.createElement('canvas');
+        tempCanvas.width  = video.videoWidth;
+        tempCanvas.height = video.videoHeight;
+        tempCanvas.getContext('2d').drawImage(video, 0, 0);
 
-    try {
-        const res = await fetch("{% url 'login_face_verify' %}", {
-            method: 'POST',
-            body: fd,
-            headers: { 'X-CSRFToken': '{{ csrf_token }}' }
-        });
-        const data = await res.json();
-        
-        loader.style.display = 'none';
+        const imageData = tempCanvas.toDataURL('image/jpeg', 0.95);
+        autoVerify(imageData);
+    }
 
-        if (data.success) {
-            window.location.href = `/login/success/{{ user.username }}/`;
-        } else {
-            // Перевіряємо ключ помилки з сервера
-            if (data.error === "too_many_attempts") {
+    async function autoVerify(imageData) {
+        const loader = document.getElementById('loader');
+        loader.style.display = 'flex';
+
+        const fd = new FormData();
+        fd.append('username',   '{{ user.username }}');
+        fd.append('image_data', imageData);
+
+        try {
+            const res  = await fetch("{% url 'login_face_verify' %}", {
+                method:  'POST',
+                body:    fd,
+                headers: { 'X-CSRFToken': '{{ csrf_token }}' }
+            });
+            const data = await res.json();
+            loader.style.display = 'none';
+
+            if (data.success) {
+                window.location.href = `/login/success/{{ user.username }}/`;
+
+            } else if (data.error === "too_many_attempts") {
                 alert("FaceID заблоковано. Перехід на OTP.");
                 document.getElementById('liveness-ui').classList.add('hidden');
                 document.getElementById('otp-section').classList.remove('hidden');
-            } else {
-                alert(data.message); // Показуємо "Спроба 1/3" або "Обличчя не знайдено"
-                
-                // Скидаємо стан Anti-Spoofing для нової спроби без перезавантаження сторінки
-                currentStepIndex = 0;
-                livenessDone = false;
-                taskQueue.forEach((_, i) => {
-                    document.getElementById(`d${i}`).className = i === 0 ? 'dot active' : 'dot';
-                });
-                document.getElementById('instr').innerText = taskQueue[0].text;
-                document.getElementById('instr').classList.remove('success');
-            }
-        }
-    } catch (e) {
-        loader.style.display = 'none';
-        alert("Сталася помилка зв'язку з сервером.");
-    }
-}
 
+            } else {
+                alert(data.message);
+                resetLiveness();
+            }
+        } catch {
+            loader.style.display = 'none';
+            alert("Сталася помилка зв'язку з сервером.");
+            resetLiveness();
+        }
+    }
+
+    // ── Скидання стану для нової спроби ──────────────────────────────────────
+    function resetLiveness() {
+        currentStepIndex = 0;
+        phase            = 'tasks';
+        centerFrames     = 0;
+        arrow.classList.remove('visible');
+        taskQueue.forEach((_, i) => {
+            document.getElementById(`d${i}`).className = i === 0 ? 'dot active' : 'dot';
+        });
+        instr.innerText = taskQueue[0].text;
+    }
+
+    // ── OTP резервний вхід ────────────────────────────────────────────────────
     async function verifyOTP(e) {
         e.preventDefault();
-        const fd = new FormData(); fd.append('username', '{{ user.username }}'); fd.append('otp_code', document.getElementById('otp-code').value);
-        const res = await fetch("{% url 'login_otp_verify' %}", { method: 'POST', body: fd, headers: {'X-CSRFToken': '{{ csrf_token }}'} });
+        const fd = new FormData();
+        fd.append('username', '{{ user.username }}');
+        fd.append('otp_code', document.getElementById('otp-code').value);
+        const res  = await fetch("{% url 'login_otp_verify' %}", {
+            method:  'POST',
+            body:    fd,
+            headers: { 'X-CSRFToken': '{{ csrf_token }}' }
+        });
         const data = await res.json();
         if (data.success) window.location.href = "/login/success/{{ user.username }}/";
         else alert(data.error);
     }
 
+    // ── Запуск камери ─────────────────────────────────────────────────────────
     navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480 } }).then(s => {
         video.srcObject = s;
-        new Camera(video, { onFrame: async () => { await faceMesh.send({image: video}); }, width: 640, height: 480 }).start();
+        new Camera(video, {
+            onFrame: async () => { await faceMesh.send({ image: video }); },
+            width: 640, height: 480
+        }).start();
     });
 </script>
 </body>

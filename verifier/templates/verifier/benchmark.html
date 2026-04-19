@@ -46,7 +46,6 @@
             padding-left: 15px;
         }
 
-        /* ── Панель керування ── */
         .controls-card {
             background: #f1f5f9;
             padding: 25px;
@@ -80,7 +79,6 @@
 
         input:focus, select:focus { outline: none; border-color: var(--primary-color); }
 
-        /* ── Режим верифікації ── */
         .mode-card {
             background: #f8f5ff;
             border: 2px solid #ddd6fe;
@@ -152,7 +150,6 @@
             min-width: 200px;
         }
 
-        /* ── Кнопка запуску ── */
         .btn-start {
             background: var(--primary-color);
             color: white;
@@ -169,7 +166,6 @@
         .btn-start:hover { background: #1d4ed8; transform: translateY(-2px); }
         .btn-start:disabled { background: #94a3b8; cursor: not-allowed; transform: none; }
 
-        /* ── Прогрес ── */
         .progress-section { margin-bottom: 30px; }
 
         .progress-info {
@@ -198,7 +194,6 @@
             background: linear-gradient(90deg, #7c3aed, #a78bfa);
         }
 
-        /* ── Термінал ── */
         .terminal-header {
             background: #1e293b;
             padding: 10px 15px;
@@ -240,7 +235,6 @@
         .res-noisy    { color: var(--warning-color); }
         .res-info     { color: #a78bfa; }
 
-        /* ── Результат ── */
         .result-card {
             margin-top: 30px;
             padding: 25px;
@@ -262,8 +256,6 @@
             color: var(--primary-color);
         }
 
-        .result-stat .val.embed { color: var(--embed-color); }
-
         .result-stat .lbl {
             font-size: 0.8rem;
             color: #64748b;
@@ -271,8 +263,6 @@
             text-transform: uppercase;
             letter-spacing: 0.5px;
         }
-
-        #skipped-info { color: #64748b; font-size: 0.9rem; font-weight: 500; }
     </style>
 </head>
 <body>
@@ -288,7 +278,6 @@
         Магістерська робота: <b>Віталій Ковальковський</b>
     </div>
 
-    <!-- Режим верифікації -->
     <div class="mode-card">
         <div>
             <label>РЕЖИМ ВЕРИФІКАЦІЇ</label>
@@ -302,33 +291,32 @@
             </div>
         </div>
         <span class="mode-badge" id="mode-badge">1 фото → 1 фото</span>
-        <p class="mode-hint" id="mode-hint">
-            Стандартний: DeepFace.verify() порівнює одне еталонне фото з одним тестовим.
-        </p>
     </div>
 
-    <!-- Параметри -->
     <div class="controls-card">
         <div class="input-group">
             <label for="dataset">Датасет:</label>
-            <select id="dataset">
-                <option value="mfr2" selected>MFR2 (Локальний)</option>
-                <option value="afdb">AFDB (Kaggle)</option>
-                <option value="rmfd">RMFD (реальні маски)</option>
+            <select id="dataset" onchange="onDatasetChange()">
+                <option value="mfr2">MFR2 (Локальний)</option>
+                <option value="rmfd" selected>RMFD (реальні маски)</option>
+                <option value="lfw">LFW (Чисті обличчя - Kaggle)</option>
             </select>
+        </div>
+        <div class="input-group" id="rmfd-path-group" style="flex:1;min-width:220px;">
+            <label for="rmfd-path">Шлях до RMFD:</label>
+            <input type="text" id="rmfd-path" value="datasets/rmfd" style="width:100%; box-sizing:border-box;">
         </div>
         <div class="input-group">
             <label for="test-limit">Вибірка (пар):</label>
-            <input type="number" id="test-limit" value="50" min="1" max="500">
+            <input type="number" id="test-limit" value="50">
         </div>
         <div class="input-group">
-            <label for="threshold">Поріг (Threshold):</label>
-            <input type="number" id="threshold" value="0.68" step="0.01" min="0.1" max="1.0">
+            <label for="threshold">Поріг:</label>
+            <input type="number" id="threshold" value="0.75" step="0.01">
         </div>
         <button class="btn-start" id="btn-start" onclick="startBenchmark()">Запустити аналіз</button>
     </div>
 
-    <!-- Прогрес -->
     <div class="progress-section">
         <div class="progress-info">
             <span>Статус опрацювання</span>
@@ -339,150 +327,93 @@
         </div>
     </div>
 
-    <!-- Термінал -->
     <div class="terminal-header">
-        <div class="dot red"></div>
-        <div class="dot yellow"></div>
-        <div class="dot green"></div>
+        <div class="dot red"></div><div class="dot yellow"></div><div class="dot green"></div>
         <span class="terminal-mode-label" id="terminal-mode-label">STANDARD MODE</span>
     </div>
-    <div id="status-log" class="terminal">Готовність до ініціалізації експерименту...</div>
+    <div id="status-log" class="terminal">Готовність...</div>
 
-    <!-- Результат -->
     <div class="result-card" id="result-card">
-        <div class="result-stat">
-            <span class="val" id="final-accuracy"></span>
-            <span class="lbl">Точність</span>
-        </div>
-        <div class="result-stat">
-            <span class="val" id="final-correct" style="font-size:1.6rem;"></span>
-            <span class="lbl">Правильних</span>
-        </div>
-        <div class="result-stat">
-            <span class="val" id="final-total" style="font-size:1.6rem;"></span>
-            <span class="lbl">Всього пар</span>
-        </div>
-        <div class="result-stat">
-            <span class="val" id="final-skipped" style="font-size:1.6rem;color:#94a3b8"></span>
-            <span class="lbl">Відсіяно</span>
-        </div>
+        <div class="result-stat"><span class="val" id="final-accuracy"></span><span class="lbl">Точність</span></div>
+        <div class="result-stat"><span class="val" id="final-far" style="color:var(--error-color)"></span><span class="lbl">FAR (Допуск)</span></div>
+        <div class="result-stat"><span class="val" id="final-frr" style="color:var(--warning-color)"></span><span class="lbl">FRR (Відмова)</span></div>
+        <div class="result-stat"><span class="val" id="final-correct"></span><span class="lbl">Правильних</span></div>
+        <div class="result-stat"><span class="val" id="final-total"></span><span class="lbl">Всього</span></div>
     </div>
 </div>
 
 <script>
     let currentES = null;
 
+    function onDatasetChange() {
+        const ds = document.getElementById('dataset').value;
+        document.getElementById('rmfd-path-group').style.display = ds === 'rmfd' ? 'flex' : 'none';
+    }
+    onDatasetChange();
+
     function onModeChange() {
         const isEmbed = document.getElementById('mode-toggle').checked;
-        const badge   = document.getElementById('mode-badge');
-        const hint    = document.getElementById('mode-hint');
-        const bar     = document.getElementById('progress-bar');
-        const tlbl    = document.getElementById('terminal-mode-label');
-        const lblEmb  = document.getElementById('lbl-embed');
-        const lblStd  = document.getElementById('lbl-standard');
-
-        if (isEmbed) {
-            badge.textContent = 'N фото → усереднений вектор';
-            hint.textContent  = 'Multi-Reference: будує embedding з усіх незамаскованих фото особи, усереднює вектори. Точніший при масках.';
-            bar.classList.add('embed-mode');
-            tlbl.textContent  = 'MULTI-REFERENCE EMBEDDING';
-            lblEmb.classList.add('active');
-            lblStd.classList.remove('active');
-            // М'якший поріг за замовчуванням для embedding-режиму
-            document.getElementById('threshold').value = '0.68';
-        } else {
-            badge.textContent = '1 фото → 1 фото';
-            hint.textContent  = 'Стандартний: DeepFace.verify() порівнює одне еталонне фото з одним тестовим.';
-            bar.classList.remove('embed-mode');
-            tlbl.textContent  = 'STANDARD MODE';
-            lblStd.classList.add('active');
-            lblEmb.classList.remove('active');
-            document.getElementById('threshold').value = '0.75';
-        }
+        document.getElementById('terminal-mode-label').textContent = isEmbed ? 'MULTI-REFERENCE EMBEDDING' : 'STANDARD MODE';
+        document.getElementById('progress-bar').className = isEmbed ? 'embed-mode' : '';
     }
 
     function startBenchmark() {
-        if (currentES) { currentES.close(); currentES = null; }
+        if (currentES) currentES.close();
 
         const dataset    = document.getElementById('dataset').value;
         const limit      = document.getElementById('test-limit').value;
         const thresh     = document.getElementById('threshold').value;
         const useEmbed   = document.getElementById('mode-toggle').checked;
+        const rmfdPath   = document.getElementById('rmfd-path').value;
 
-        const bar         = document.getElementById('progress-bar');
-        const percentText = document.getElementById('progress-percent');
-        const log         = document.getElementById('status-log');
-        const btnStart    = document.getElementById('btn-start');
+        const log = document.getElementById('status-log');
+        const btn = document.getElementById('btn-start');
+        const bar = document.getElementById('progress-bar');
 
-        // Очищення
-        log.innerHTML = `<span style="color:#94a3b8">[SYS] Датасет: ${dataset.toUpperCase()} | Ліміт: ${limit} | Поріг: ${thresh} | Режим: ${useEmbed ? 'EMBEDDING' : 'STANDARD'}</span><br><br>`;
-        bar.style.width = '0%';
-        percentText.innerText = '0%';
-        btnStart.disabled = true;
-        btnStart.textContent = 'Виконується...';
+        log.innerHTML = `<span style="color:#94a3b8">[SYS] Датасет: ${dataset.toUpperCase()} | Поріг: ${thresh}</span><br><br>`;
+        btn.disabled = true;
+        btn.textContent = 'Виконується...';
 
-        ['final-accuracy','final-correct','final-total','final-skipped'].forEach(id => {
-            document.getElementById(id).textContent = '';
-        });
-
-        const url = `/benchmark-stream/?limit=${limit}&threshold=${thresh}&dataset=${dataset}&use_embedding=${useEmbed}`;
-        currentES = new EventSource(url);
+        const params = new URLSearchParams({ limit, threshold: thresh, dataset, use_embedding: useEmbed, rmfd_path: rmfdPath });
+        currentES = new EventSource(`/benchmark-stream/?${params}`);
 
         currentES.onmessage = function(event) {
             const data = JSON.parse(event.data);
 
             if (data.progress !== undefined) {
                 bar.style.width = data.progress + '%';
-                percentText.innerText = data.progress + '%';
+                document.getElementById('progress-percent').innerText = data.progress + '%';
             }
 
-            if (data.status === 'info') {
-                log.innerHTML += `<span class="res-info">[INFO] ${data.msg}</span><br>`;
-            }
-
+            if (data.status === 'info') log.innerHTML += `<span class="res-info">[INFO] ${data.msg}</span><br>`;
+            
             if (data.status === 'processing') {
-                const cls = data.result === 'TRUE' ? 'res-true' : 'res-false';
+                // ЛОГІКА КОЛЬОРУ: Порівнюємо результат з істиною
+                const isCorrect = (data.result === 'MATCH') === data.is_pos;
+                const cls = isCorrect ? 'res-true' : 'res-false';
+                
                 log.innerHTML += `> ID: <b>${data.person}</b> | Dist: <i>${data.dist}</i> | <span class="${cls}">${data.result}</span><br>`;
                 log.scrollTop = log.scrollHeight;
             }
 
             if (data.status === 'noisy') {
                 log.innerHTML += `> ID: <i>${data.person}</i> | <span class="res-noisy">SKIP (Identity Validation Failed)</span><br>`;
-                log.scrollTop = log.scrollHeight;
             }
 
             if (data.status === 'completed') {
-                const accEl = document.getElementById('final-accuracy');
-                accEl.textContent = data.accuracy;
-                accEl.className   = 'val' + (useEmbed ? ' embed' : '');
+                document.getElementById('final-accuracy').textContent = data.accuracy;
+                document.getElementById('final-far').textContent = data.far;
+                document.getElementById('final-frr').textContent = data.frr;
+                document.getElementById('final-correct').textContent = data.correct;
+                document.getElementById('final-total').textContent = data.total;
 
-                document.getElementById('final-correct').textContent = data.correct ?? '—';
-                document.getElementById('final-total').textContent   = data.total   ?? '—';
-                document.getElementById('final-skipped').textContent = data.skipped ?? '—';
-
-                log.innerHTML += `<br><b style="color:var(--success-color)">[FINISH] Аналіз завершено. Режим: ${data.mode}</b>`;
-                document.getElementById('finish-sound').play().catch(() => {});
-
+                log.innerHTML += `<br><b style="color:var(--success-color)">[FINISH] ${data.dataset} | Поріг: ${data.threshold}</b>`;
+                document.getElementById('finish-sound').play();
+                
                 currentES.close();
-                currentES = null;
-                btnStart.disabled = false;
-                btnStart.textContent = 'Запустити аналіз';
+                btn.disabled = false;
+                btn.textContent = 'Запустити аналіз';
             }
-
-            if (data.status === 'error') {
-                log.innerHTML += `<br><span style="color:var(--error-color)">[ERROR] ${data.message}</span>`;
-                currentES.close();
-                currentES = null;
-                btnStart.disabled = false;
-                btnStart.textContent = 'Запустити аналіз';
-            }
-        };
-
-        currentES.onerror = function() {
-            log.innerHTML += `<br><span style="color:var(--error-color)">[FATAL] Помилка з'єднання з сервером.</span>`;
-            if (currentES) { currentES.close(); currentES = null; }
-            btnStart.disabled = false;
-            btnStart.textContent = 'Запустити аналіз';
         };
     }
 </script>
