@@ -577,7 +577,7 @@
 
             const username = document.getElementById('username').value.trim();
             if (!/^[a-zA-Z0-9_]+$/.test(username)) {
-                showError("Тільки латинські літери (A-Z) та цифри.");
+                showError("Тільки латинські літери, цифри та _ (без пробілів).");
                 return;
             }
 

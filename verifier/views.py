@@ -1,7 +1,5 @@
 import os
 import base64
-import requests
-import shutil
 import pyotp
 import qrcode
 import json
@@ -11,9 +9,9 @@ from django.shortcuts import render, redirect, get_object_or_404
 from django.http import JsonResponse, StreamingHttpResponse
 from django.conf import settings
 from django.core.files.base import ContentFile
-from deepface import DeepFace
 from .models import UserProfile
 from .embedding_utils import (
+    embed_reference_photos,
     build_reference_embedding,
     get_live_embedding,
     compute_personal_threshold,
@@ -21,6 +19,7 @@ from .embedding_utils import (
     BASE_THRESHOLD,
 )
 from .utils import run_accuracy_generator
+from .liveness_core import analyze_frame, LivenessUnavailable
 
 
 # ============================================================
@@ -42,14 +41,18 @@ def save_base64_image(data_url, file_name):
 
 
 # ============================================================
-# РЕЄСТРАЦІЯ — ЕТАП 1: Перевірка фото + Генерація QR
-# Тепер приймає до 3 фото (camera_data_1/2/3 або file uploads)
-# і зберігає всі шляхи в сесії для подальшої побудови embedding.
+# РЕЄСТРАЦІЯ — ЕТАП 1: Embedding фото + Генерація QR
+# Приймає до 3 фото (camera_data_1/2/3 або file uploads), одразу рахує
+# embedding кожного (це ж і перевірка, що обличчя є) і зберігає їх у сесії —
+# етап 2 лише перевіряє OTP, без повторного проходу через мережі.
 # ============================================================
+REG_SESSION_KEYS = ['reg_username', 'reg_secret', 'reg_temp_photo_paths', 'reg_embeddings']
+
+
 def register_step1(request):
     if request.method == 'POST':
         # Очищення сесії
-        for key in ['reg_username', 'reg_secret', 'reg_temp_photo_paths']:
+        for key in REG_SESSION_KEYS:
             request.session.pop(key, None)
 
         username = request.POST.get('username', '').strip()
@@ -97,14 +100,9 @@ def register_step1(request):
         if not temp_paths:
             return JsonResponse({"success": False, "error": "Фото не надано"}, status=400)
 
-        # ── Валідація: перевіряємо що хоча б на першому фото є обличчя ──
-        try:
-            DeepFace.extract_faces(
-                img_path=temp_paths[0],
-                detector_backend='retinaface',
-                enforce_detection=True
-            )
-        except Exception:
+        # ── Embedding кожного фото; фото без обличчя пропускаються ──
+        embeddings = embed_reference_photos(temp_paths)
+        if not embeddings:
             for p in temp_paths:
                 if os.path.exists(p):
                     os.remove(p)
@@ -124,12 +122,13 @@ def register_step1(request):
         request.session['reg_username'] = username
         request.session['reg_secret'] = secret
         request.session['reg_temp_photo_paths'] = temp_paths  # список шляхів
+        request.session['reg_embeddings'] = [e.tolist() for e in embeddings]
 
         return JsonResponse({
             "success": True,
             "qr_code": qr_base64,
-            "photo_count": len(temp_paths),
-            "message": f"Прийнято {len(temp_paths)} фото. Скануйте QR-код.",
+            "photo_count": len(embeddings),
+            "message": f"Обличчя знайдено на {len(embeddings)} з {len(temp_paths)} фото. Скануйте QR-код.",
         })
 
     return JsonResponse({"success": False, "error": "Method not allowed"}, status=405)
@@ -137,7 +136,7 @@ def register_step1(request):
 
 # ============================================================
 # РЕЄСТРАЦІЯ — ЕТАП 2: OTP перевірка + Збереження в БД
-# Тут будуємо multi-reference embedding і зберігаємо його.
+# Тут з embedding, порахованих на етапі 1, будуємо еталон і зберігаємо його.
 # ============================================================
 def register_step2(request):
     if request.method == 'POST':
@@ -157,14 +156,16 @@ def register_step2(request):
         if not totp.verify(otp_code):
             return JsonResponse({"success": False, "error": "Невірний код! Спробуйте ще раз."}, status=400)
 
-        # 2. Будуємо Multi-Reference Embedding
+        # 2. Будуємо Multi-Reference Embedding з embedding етапу 1
+        embeddings = [np.array(e, dtype=np.float32) for e in request.session.get('reg_embeddings', [])]
+        photo_count = len(embeddings)
         try:
-            ref_embedding, photo_count = build_reference_embedding(temp_paths)
+            ref_embedding = build_reference_embedding(embeddings)
         except ValueError as e:
             return JsonResponse({"success": False, "error": f"Помилка embedding: {str(e)}"}, status=400)
 
         # 3. Обчислюємо персональний поріг (якщо є хоча б 2 фото)
-        personal_threshold = compute_personal_threshold(temp_paths)
+        personal_threshold = compute_personal_threshold(embeddings)
 
         # 4. Зберігаємо в БД
         try:
@@ -189,7 +190,7 @@ def register_step2(request):
             if os.path.exists(p):
                 os.remove(p)
 
-        for key in ['reg_username', 'reg_secret', 'reg_temp_photo_paths']:
+        for key in REG_SESSION_KEYS:
             request.session.pop(key, None)
 
         return JsonResponse({
@@ -204,14 +205,17 @@ def register_step2(request):
 # ============================================================
 # ЛОГІН — БІОМЕТРИЧНА ВЕРИФІКАЦІЯ
 # Використовує Multi-Reference Embedding + TTA.
-# Якщо embedding відсутній (старий користувач) — fallback
-# до старого DeepFace.verify().
 # ============================================================
 def login_face_verify(request):
     if request.method == 'POST':
         username = request.POST.get('username')
         image_data = request.POST.get('image_data')
         user = get_object_or_404(UserProfile, username=username)
+        if not user.face_embedding:
+            return JsonResponse({
+                "success": False, "error": "no_embedding",
+                "message": "Для користувача немає еталонного embedding. Зареєструйтесь повторно.",
+            })
 
         attempts = request.session.get('face_attempts', 0) + 1
         request.session['face_attempts'] = attempts
@@ -220,29 +224,13 @@ def login_face_verify(request):
         captured_path = save_base64_image(image_data, f"login_attempt_{username}.jpg")
 
         try:
-            # ── НОВИЙ ШЛЯХ: Multi-Reference Embedding ──
-            if user.face_embedding:
-                live_embedding = get_live_embedding(captured_path)
-                threshold = user.personal_threshold or BASE_THRESHOLD
-                result = verify_with_embedding(
-                    live_embedding=live_embedding,
-                    ref_embedding=np.array(user.face_embedding),
-                    threshold=threshold,
-                )
-            else:
-                # ── FALLBACK: старий метод для користувачів без embedding ──
-                raw = DeepFace.verify(
-                    img1_path=user.photo.path,
-                    img2_path=captured_path,
-                    model_name='ArcFace',
-                    detector_backend='retinaface',
-                    enforce_detection=True,
-                )
-                result = {
-                    "verified":  raw["verified"],
-                    "distance":  round(raw["distance"], 4),
-                    "threshold": round(raw["threshold"], 4),
-                }
+            live_embedding = get_live_embedding(captured_path)
+            threshold = user.personal_threshold or BASE_THRESHOLD
+            result = verify_with_embedding(
+                live_embedding=live_embedding,
+                ref_embedding=np.array(user.face_embedding),
+                threshold=threshold,
+            )
 
             if result["verified"]:
                 request.session['face_attempts'] = 0
@@ -267,6 +255,7 @@ def login_face_verify(request):
             })
 
         except Exception as e:
+            print(f"[login_face_verify] Помилка верифікації: {e}")
             error_type = "too_many_attempts" if is_blocked else "no_face"
             msg = (
                 "3 невдалі спроби (обличчя не знайдено). Перехід на OTP."
@@ -276,6 +265,26 @@ def login_face_verify(request):
             return JsonResponse({"success": False, "error": error_type, "message": msg})
 
     return JsonResponse({"error": "Method not allowed"}, status=405)
+
+
+# ============================================================
+# ЛОГІН — ВДОСКОНАЛЕНА ПЕРЕВІРКА ЖИВОСТІ
+# Приймає один кадр (JSON {"image": dataURL}) і повертає ознаки
+# обличчя (EAR, положення носа, геометрія). Логіка процедури — у login.html.
+# 503 означає, що MediaPipe недоступний: клієнт переходить на базову процедуру.
+# ============================================================
+def liveness_detect(request):
+    if request.method != 'POST':
+        return JsonResponse({"error": "Method not allowed"}, status=405)
+    try:
+        img = json.loads(request.body or b"{}").get("image", "")
+        if "," in img:
+            img = img.split(",", 1)[1]
+        return JsonResponse(analyze_frame(base64.b64decode(img)))
+    except LivenessUnavailable as e:
+        return JsonResponse({"faceFound": False, "error": "unavailable", "message": str(e)}, status=503)
+    except Exception:
+        return JsonResponse({"faceFound": False, "error": "bad image"}, status=400)
 
 
 # ============================================================
@@ -318,97 +327,8 @@ def benchmark_stream(request):
 
 
 # ============================================================
-# СТАРІ VIEW (без змін)
+# КОРИСТУВАЧІ ТА СТОРІНКИ
 # ============================================================
-def verify_image(request):
-    if request.method != 'POST':
-        return JsonResponse({"error": "Method not allowed"}, status=405)
-    image_data = request.POST.get('image_data')
-    if not image_data:
-        return JsonResponse({"error": "No data"}, status=400)
-    captured_path = save_base64_image(image_data, "captured_image.jpg")
-    test_photo_path = os.path.join(settings.STATICFILES_DIRS[0], "testPhoto.jpg")
-    if not os.path.exists(test_photo_path):
-        return JsonResponse({"error": "no_reference", "message": "Спочатку зробіть еталонне фото!"}, status=400)
-    try:
-        result = DeepFace.verify(img1_path=test_photo_path, img2_path=captured_path, enforce_detection=True)
-        return JsonResponse({"verified": result["verified"], "distance": result["distance"], "threshold": result["threshold"]})
-    except Exception as e:
-        error_msg = str(e)
-        if "Face could not be detected" in error_msg:
-            return JsonResponse({"error": "no_face_detected", "message": "На фото не видно обличчя."}, status=400)
-        return JsonResponse({"error": "server_error", "message": error_msg}, status=500)
-
-
-def capture_test_photo(request):
-    if request.method != 'POST':
-        return JsonResponse({"error": "Method not allowed"}, status=405)
-    image_data = request.POST.get('image_data')
-    if not image_data:
-        return JsonResponse({"error": "No data"}, status=400)
-    temp_path = save_base64_image(image_data, "temp_test.jpg")
-    try:
-        DeepFace.extract_faces(img_path=temp_path, enforce_detection=True)
-        save_base64_image(image_data, "testPhoto.jpg")
-        return JsonResponse({"success": True, "message": "Еталонне фото успішно збережено."})
-    except ValueError:
-        return JsonResponse({"error": "no_face_detected", "message": "На еталонному фото не знайдено обличчя!"}, status=400)
-    except Exception as e:
-        return JsonResponse({"error": "server_error", "message": str(e)}, status=500)
-
-
-def faceAnalise(request):
-    result = None
-    relative_path = None
-    upload_dir = os.path.join(settings.MEDIA_ROOT, 'uploads')
-    if request.method == 'POST':
-        if not os.path.exists(upload_dir):
-            os.makedirs(upload_dir)
-        else:
-            for filename in os.listdir(upload_dir):
-                file_path = os.path.join(upload_dir, filename)
-                try:
-                    if os.path.isfile(file_path) or os.path.islink(file_path):
-                        os.unlink(file_path)
-                    elif os.path.isdir(file_path):
-                        shutil.rmtree(file_path)
-                except Exception as e:
-                    print(f'Не вдалося видалити {file_path}: {e}')
-        try:
-            if request.FILES.get('photo'):
-                photo = request.FILES['photo']
-                relative_path = os.path.join('uploads', photo.name)
-                file_path = os.path.join(settings.MEDIA_ROOT, relative_path)
-                with open(file_path, 'wb') as f:
-                    for chunk in photo.chunks():
-                        f.write(chunk)
-            elif request.POST.get('photo_url'):
-                photo_url = request.POST.get('photo_url')
-                response = requests.get(photo_url)
-                if response.status_code == 200:
-                    file_name = os.path.basename(photo_url.split("?")[0]) or "url_image.jpg"
-                    relative_path = os.path.join('uploads', file_name)
-                    file_path = os.path.join(settings.MEDIA_ROOT, relative_path)
-                    with open(file_path, 'wb') as f:
-                        f.write(response.content)
-                else:
-                    raise Exception("Не вдалося завантажити зображення за посиланням.")
-            else:
-                return render(request, 'verifier/faceAnalise.html', {'result': None})
-
-            if relative_path and os.path.exists(file_path):
-                analysis_result = DeepFace.analyze(file_path, actions=['age', 'gender', 'emotion'])
-                result = analysis_result[0]
-                result['img_path'] = relative_path
-                if 'gender' in result and isinstance(result['gender'], dict):
-                    result['gender'] = max(result['gender'], key=result['gender'].get)
-        except ValueError as e:
-            result = {"error": "Обличчя не знайдено!" if "Face could not be detected" in str(e) else f"Помилка даних: {str(e)}"}
-        except Exception as e:
-            result = {"error": f"Помилка: {str(e)}"}
-    return render(request, 'verifier/faceAnalise.html', {'result': result, 'MEDIA_URL': settings.MEDIA_URL})
-
-
 def user_list(request):
     query = request.GET.get('q')
     if query:
@@ -434,10 +354,6 @@ def login_page(request, username):
     return render(request, 'verifier/login.html', {'user': user})
 
 
-def home(request):
-    return render(request, 'verifier/home.html')
-
-
 def logined_page(request, username):
     return render(request, 'verifier/logined_page.html', {'username': username})
 
@@ -448,7 +364,3 @@ def startpage(request):
 
 def magisterjob(request):
     return render(request, 'verifier/magisterjob.html')
-
-
-def krystyna_view(request):
-    return render(request, 'verifier/krystyna.html')

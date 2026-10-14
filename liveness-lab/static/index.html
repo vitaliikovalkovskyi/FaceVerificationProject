@@ -1,0 +1,311 @@
+<!doctype html>
+<html lang="uk">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Liveness Lab</title>
+<style>
+  body{font-family:system-ui,sans-serif;background:#f1f5f9;margin:0;padding:16px;color:#0f172a}
+  .wrap{max-width:560px;margin:0 auto}
+  .card{background:#fff;border-radius:16px;padding:16px;margin-bottom:12px;box-shadow:0 2px 8px #0001}
+  h1{font-size:1.2rem;margin:0 0 8px} label{font-size:.85rem;color:#475569;display:block;margin:8px 0 4px}
+  select,input,button{font-size:1rem;padding:10px;border-radius:10px;border:1px solid #cbd5e1;width:100%;box-sizing:border-box}
+  button{background:#4f46e5;color:#fff;border:0;font-weight:700;cursor:pointer;margin-top:10px}
+  button.sec{background:#e2e8f0;color:#0f172a} button:disabled{opacity:.5}
+  .cam{position:relative;width:100%;aspect-ratio:4/3;background:#000;border-radius:12px;overflow:hidden}
+  video{width:100%;height:100%;object-fit:cover;transform:scaleX(-1)}
+  .badge{position:absolute;left:0;right:0;bottom:8px;text-align:center;color:#fff;font-weight:700;
+    text-shadow:0 1px 3px #000;font-size:1.1rem}
+  .steps{display:flex;gap:8px;justify-content:center;margin:10px 0;flex-wrap:wrap}
+  .dot{padding:4px 10px;border-radius:99px;background:#e2e8f0;font-size:.8rem}
+  .dot.active{background:#c7d2fe}.dot.ok{background:#bbf7d0}.dot.fail{background:#fecaca}
+  table{width:100%;border-collapse:collapse;font-size:.85rem} td,th{padding:4px;border-bottom:1px solid #e2e8f0;text-align:left}
+  .res{font-weight:700;text-align:center;margin-top:8px}
+  .cnt td.done{background:#bbf7d0;font-weight:700}.cnt td{text-align:center}.cnt th{text-align:center}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="card">
+    <h1>Liveness Lab — тестування модуля</h1>
+    <label>Версія модуля</label>
+    <select id="version">
+      <option value="baseline">baseline — як у дипломному проєкті (абсолютні пороги)</option>
+      <option value="improved">improved — EAR + калібрування + випадковий порядок</option>
+    </select>
+    <label>Тип спроби (що ви показуєте камері)</label>
+    <select id="attack">
+      <option value="genuine">genuine — справжня людина</option>
+      <option value="photo_screen">photo_screen — фото на екрані телефона</option>
+      <option value="video_replay">video_replay — відео-реплей на екрані</option>
+    </select>
+    <label>Примітка (освітлення тощо, необов'язково)</label>
+    <input id="note" placeholder="напр. денне світло / лампа">
+    <button id="start">Старт спроби</button>
+  </div>
+
+  <div class="card">
+    <h1>Лічильник замірів</h1>
+    <div id="counter">—</div>
+    <div class="res" id="cur" style="margin-top:6px"></div>
+  </div>
+
+  <div class="card">
+    <div class="cam"><video id="video" autoplay playsinline muted></video><div class="badge" id="instr">Натисніть «Старт»</div></div>
+    <div class="steps" id="steps"></div>
+    <div class="res" id="result"></div>
+  </div>
+
+  <div class="card">
+    <h1>Результати</h1>
+    <div id="metrics">—</div>
+    <button class="sec" id="refresh">Оновити метрики</button>
+    <button class="sec" id="undo">Видалити останній запис</button>
+    <button class="sec" id="clear" style="background:#fecaca">Очистити CSV (зберігається копія)</button>
+    <a href="/export"><button class="sec" type="button">Завантажити CSV</button></a>
+  </div>
+</div>
+
+<canvas id="grab" style="display:none"></canvas>
+<script>
+const $ = id => document.getElementById(id);
+const video = $('video'), grab = $('grab'), gctx = grab.getContext('2d');
+
+// ── параметри ────────────────────────────────────────────────────────────
+const P = {
+  interval: 100,            // мс між запитами (послідовно, не частіше)
+  baseline: {               // значення з login.html дипломного проєкту
+    alignTol: 0.08, blinkGap: 0.012, turnLeft: 0.65, turnRight: 0.35,
+    centerZone: 0.10, stableFrames: 8, totalTimeout: 20000
+  },
+  improved: {
+    calibMs: 1000, earRatio: 0.78, turnTau: 0.12, stepTimeout: 9000, pauseMs: 800,
+    earRecover: 0.90,        // EAR після моргання має повернутись до 90% від базового
+    blinkMaxMs: 700,         // максимальна тривалість "закритого ока", щоб це було морганням
+    minTurnReactionMs: 250,  // поворот швидше за це після показу завдання вважається підозрілим
+    jumpRatio: 0.20,         // допустима відносна зміна розміру обличчя між сусідніми кадрами
+    jumpCenter: 0.20,        // допустимий зсув центру обличчя між кадрами (частка ширини кадру)
+    jumpMaxGapMs: 300        // порівнюємо лише кадри, що йдуть майже один за одним
+  }
+};
+
+const LABEL = {align:'Вписати обличчя', calibrate:'Калібрування', blink:'Кліпнути',
+  left:'Ліворуч', right:'Праворуч', return:'Назад у центр', stable:'Не рухатись'};
+
+let stream = null, running = false;
+
+async function ensureCamera(){
+  if (stream) return;
+  stream = await navigator.mediaDevices.getUserMedia({video:{width:640,height:480}});
+  video.srcObject = stream;
+  await new Promise(r => video.onloadedmetadata = r);
+}
+
+async function detect(){
+  const W = 320, H = Math.round(320 * video.videoHeight / video.videoWidth);
+  grab.width = W; grab.height = H;
+  gctx.drawImage(video, 0, 0, W, H);
+  const r = await fetch('/detect', {method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({image: grab.toDataURL('image/jpeg', 0.6)})});
+  return r.json();
+}
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+const median = a => { const s=[...a].sort((x,y)=>x-y); return s[Math.floor(s.length/2)]; };
+function renderSteps(list, states){
+  $('steps').innerHTML = list.map((s,i)=>`<span class="dot ${states[i]||''}">${LABEL[s]}</span>`).join('');
+}
+const shuffle = a => { a=[...a]; for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]];} return a; };
+
+// ── baseline: логіка login.html (4 фази) ────────────────────────────────
+async function runBaseline(){
+  const c = P.baseline;
+  const tasks = ['align', ...shuffle(['blink','left','right']).slice(0,2)];
+  const states = tasks.map((_,i)=> i===0?'active':'');
+  renderSteps(tasks, states);
+  let idx = 0, phase = 'tasks', centerFrames = 0;
+  const t0 = performance.now();
+  $('instr').textContent = 'Впишіть обличчя в овал';
+  while (performance.now() - t0 < c.totalTimeout){
+    const t1 = performance.now();
+    const d = await detect();
+    if (d.faceFound){
+      const noseX = d.noseXRaw;               // координата в кадрі без дзеркала, як у login.html (там FaceMesh теж отримує сирий кадр)
+      if (phase === 'tasks'){
+        const id = tasks[idx]; let ok = false;
+        if (id==='align') ok = Math.abs(noseX-0.5) < c.alignTol;
+        else if (id==='blink') ok = d.eyeGap < c.blinkGap;
+        else if (id==='left') ok = noseX > c.turnLeft;
+        else if (id==='right') ok = noseX < c.turnRight;
+        if (ok){
+          states[idx]='ok'; idx++;
+          if (idx < tasks.length){ states[idx]='active'; $('instr').textContent = LABEL[tasks[idx]]; }
+          else {
+            const last = tasks[tasks.length-1];
+            phase = (last==='left'||last==='right') ? 'return' : 'stable';
+            centerFrames = 0;
+            $('instr').textContent = phase==='return' ? 'Поверніть голову прямо…' : 'Не рухайтесь…';
+          }
+          renderSteps(tasks, states);
+        }
+      } else if (phase === 'return'){
+        if (Math.abs(noseX-0.5) < c.centerZone){ phase='stable'; centerFrames=1; $('instr').textContent='Не рухайтесь…'; }
+      } else if (phase === 'stable'){
+        if (Math.abs(noseX-0.5) < c.centerZone){
+          if (++centerFrames >= c.stableFrames) return {accepted:true, failed:'', ms: performance.now()-t0};
+        } else centerFrames = 0;
+      }
+    }
+    await sleep(Math.max(0, P.interval - (performance.now()-t1)));
+  }
+  const failedStep = phase==='tasks' ? tasks[idx] : phase;
+  states[Math.min(idx, tasks.length-1)] = 'fail'; renderSteps(tasks, states);
+  return {accepted:false, failed: failedStep, ms: performance.now()-t0};
+}
+
+// ── improved: EAR + калібрування + випадковий порядок усіх дій ──────────
+async function runImproved(){
+  const c = P.improved;
+  const tasks = ['calibrate', ...shuffle(['blink','left','right'])];
+  const states = tasks.map((_,i)=> i===0?'active':'');
+  renderSteps(tasks, states);
+  const t0 = performance.now();
+  let baseEar = null, baseNose = 0.5;
+
+  // калібрування
+  $('instr').textContent = 'Дивіться прямо…';
+  const ears = [], noses = [], tc = performance.now();
+  while (performance.now() - tc < c.calibMs){
+    const t1 = performance.now(); const d = await detect();
+    if (d.faceFound){ ears.push(d.ear); noses.push(d.noseRatio); }
+    await sleep(Math.max(0, P.interval-(performance.now()-t1)));
+  }
+  if (ears.length < 3){ states[0]='fail'; renderSteps(tasks,states);
+    return {accepted:false, failed:'calibrate', ms: performance.now()-t0}; }
+  baseEar = median(ears); baseNose = median(noses);
+  states[0]='ok';
+
+  // безперервність обличчя: різкий стрибок розміру/положення між сусідніми кадрами
+  let prev = null;
+  const jumped = (d, now) => {
+    const p = prev; prev = {t: now, w: d.faceWidth, e: d.eyeDist, cx: d.faceCx};
+    if (!p || now - p.t > c.jumpMaxGapMs) return false;
+    const rel = (a,b) => Math.abs(a-b) / Math.max(a, 1e-6);
+    return rel(p.w, d.faceWidth) > c.jumpRatio || rel(p.e, d.eyeDist) > c.jumpRatio
+        || Math.abs(p.cx - d.faceCx) > c.jumpCenter;
+  };
+
+  for (let i=1;i<tasks.length;i++){
+    const id = tasks[i]; states[i]='active'; renderSteps(tasks,states);
+    $('instr').textContent = LABEL[id];
+    const ts = performance.now();
+    let ok = false, reason = '';
+    let armed = false;                  // неправильна дія враховується лише після повернення голови в нейтраль
+    let lowSince = null, lowInvalid = false;   // стан моргання
+    while (performance.now()-ts < c.stepTimeout){
+      const t1 = performance.now(); const d = await detect();
+      if (d.faceFound){
+        const now = performance.now();
+        if (jumped(d, now)){ reason = 'continuity'; break; }
+        const dn = d.noseRatio - baseNose;       // відхилення голови від базового положення
+        if (Math.abs(dn) < c.turnTau * 0.7) armed = true;
+
+        if (id==='blink'){
+          if (d.ear < c.earRatio*baseEar){
+            if (lowSince === null) lowSince = now;
+            else if (now - lowSince > c.blinkMaxMs) lowInvalid = true;   // тривале закриття ≠ моргання
+          } else if (lowSince !== null && d.ear >= c.earRecover*baseEar){
+            if (!lowInvalid){ ok = true; }       // падіння ЕАР і швидке відновлення = моргання
+            lowSince = null; lowInvalid = false;
+          }
+          if (!ok && armed && Math.abs(dn) > c.turnTau){ reason = 'wrong_action'; }
+        } else if (id==='left'){
+          if (dn > c.turnTau){
+            if (now - ts < c.minTurnReactionMs) reason = 'too_fast';
+            else ok = true;
+          } else if (armed && dn < -c.turnTau) reason = 'wrong_action';
+        } else if (id==='right'){
+          if (dn < -c.turnTau){
+            if (now - ts < c.minTurnReactionMs) reason = 'too_fast';
+            else ok = true;
+          } else if (armed && dn > c.turnTau) reason = 'wrong_action';
+        }
+      }
+      if (ok || reason) break;
+      await sleep(Math.max(0, P.interval-(performance.now()-t1)));
+    }
+    states[i] = ok ? 'ok' : 'fail'; renderSteps(tasks,states);
+    if (!ok) return {accepted:false, failed: reason ? (reason==='continuity' ? 'continuity' : id+':'+reason) : id, ms: performance.now()-t0};
+    $('instr').textContent = 'Дивіться прямо…';
+    await sleep(c.pauseMs);                 // пауза між кроками
+  }
+  return {accepted:true, failed:'', ms: performance.now()-t0};
+}
+
+// ── керування ────────────────────────────────────────────────────────────
+$('start').onclick = async () => {
+  if (running) return; running = true; $('start').disabled = true; $('result').textContent = '';
+  try {
+    await ensureCamera();
+    const version = $('version').value, attack = $('attack').value;
+    $('instr').textContent = 'Приготуйтесь…'; await sleep(1500);
+    const r = version==='baseline' ? await runBaseline() : await runImproved();
+    $('instr').textContent = r.accepted ? 'ПРОЙДЕНО' : 'НЕ ПРОЙДЕНО';
+    const expected = attack==='genuine';
+    $('result').textContent = r.accepted
+      ? (expected ? '✓ прийнято (очікувано)' : '⚠ атаку ПРИЙНЯТО (APCER+)')
+      : (expected ? '⚠ справжнього ВІДХИЛЕНО (BPCER+)' : '✓ атаку відхилено (очікувано)');
+    await fetch('/attempt', {method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({version, attack_type: attack, accepted: r.accepted,
+        failed_step: r.failed, duration_ms: Math.round(r.ms), note: $('note').value})});
+    loadMetrics();
+  } catch(e){ $('instr').textContent = 'Помилка: ' + e.message; }
+  running = false; $('start').disabled = false;
+};
+
+const TARGET = {genuine:20, photo_screen:10, video_replay:10};
+const VERSIONS = ['baseline','improved'];
+let lastCounts = {};
+function renderCounter(){
+  const rows = Object.keys(TARGET).map(t => {
+    const cells = VERSIONS.map(v => {
+      const n = (lastCounts[v] && lastCounts[v][t]) || 0;
+      return `<td class="${n>=TARGET[t]?'done':''}">${n}/${TARGET[t]}</td>`;
+    }).join('');
+    return `<tr><td>${t}</td>${cells}</tr>`;
+  }).join('');
+  $('counter').innerHTML = `<table class="cnt"><tr><th></th>${VERSIONS.map(v=>`<th>${v}</th>`).join('')}</tr>${rows}</table>
+    <div style="font-size:.75rem;color:#64748b;margin-top:4px">Рахуються спроби без FTA (коли обличчя не знайдено).</div>`;
+  const v = $('version').value, t = $('attack').value;
+  const n = (lastCounts[v] && lastCounts[v][t]) || 0;
+  $('cur').textContent = `Зараз: ${v} / ${t} — ${n}/${TARGET[t]}`;
+}
+$('version').onchange = renderCounter;
+$('attack').onchange = renderCounter;
+
+const pct = x => x==null ? '—' : (x*100).toFixed(1)+'%';
+async function loadMetrics(){
+  const m = await (await fetch('/metrics')).json();
+  lastCounts = {}; Object.keys(m).forEach(v => lastCounts[v] = m[v].counts || {});
+  renderCounter();
+  const keys = Object.keys(m);
+  if (!keys.length){ $('metrics').textContent = 'Поки немає даних'; return; }
+  $('metrics').innerHTML = keys.map(v => {
+    const x = m[v];
+    const att = Object.entries(x.per_attack).map(([a,y])=>`<tr><td>APCER ${a} (n=${y.n})</td><td>${pct(y.apcer)}</td></tr>`).join('');
+    return `<b>${v}</b><table>
+      <tr><td>BPCER (genuine n=${x.genuine_n})</td><td>${pct(x.bpcer)}</td></tr>${att}
+      <tr><td>FTA (обличчя не знайдено, не враховано)</td><td>${x.fta}</td></tr>
+      <tr><td>APCER (найгірший)</td><td>${pct(x.apcer_worst)}</td></tr>
+      <tr><td><b>ACER</b></td><td><b>${pct(x.acer)}</b></td></tr></table><br>`;
+  }).join('');
+}
+$('refresh').onclick = loadMetrics;
+$('clear').onclick = async () => {
+  if (!confirm('Очистити журнал спроб? Копію буде збережено в data/backup_*.csv')) return;
+  await fetch('/clear',{method:'POST'}); loadMetrics();
+};
+$('undo').onclick = async () => { await fetch('/undo',{method:'POST'}); loadMetrics(); };
+loadMetrics();
+</script>
+</body>
+</html>

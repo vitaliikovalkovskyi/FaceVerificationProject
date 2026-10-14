@@ -8,7 +8,7 @@
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils"></script>
     <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600;700&display=swap" rel="stylesheet">
     <style>
-        :root { --primary: #4f46e5; --bg: #f8fafc; --card: #ffffff; --success: #10b981; }
+        :root { --primary: #4f46e5; --bg: #f8fafc; --card: #ffffff; --success: #10b981; --error: #ef4444; }
         body { font-family: 'Montserrat', sans-serif; background: var(--bg); display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; }
         .card { background: var(--card); padding: 2rem; border-radius: 24px; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.1); width: 100%; max-width: 500px; text-align: center; position: relative; }
         .card::before { content: ''; position: absolute; top: 0; left: 0; width: 100%; height: 6px; background: linear-gradient(90deg, var(--primary), #818cf8); border-radius: 24px 24px 0 0; }
@@ -21,6 +21,7 @@
         .dot { width: 30px; height: 6px; background: #e2e8f0; border-radius: 10px; transition: 0.3s; }
         .dot.active { background: var(--primary); }
         .dot.done { background: var(--success); }
+        .dot.fail { background: var(--error); }
         .loader-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(255,255,255,0.95); display: none; flex-direction: column; align-items: center; justify-content: center; z-index: 100; backdrop-filter: blur(5px); }
         .spinner { width: 50px; height: 50px; border: 5px solid #f3f3f3; border-top: 5px solid var(--primary); border-radius: 50%; animation: spin 1s linear infinite; }
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
@@ -36,17 +37,18 @@
 <div class="card" id="liveness-ui">
     <a href="{% url 'user_list' %}" style="text-decoration: none; color: #64748b; font-size: 0.8rem; float: left;">← Назад</a>
     <h2 style="margin-top: 25px;">Вхід: <span style="color: var(--primary);">{{ user.username }}</span></h2>
-    
+
     <div class="step-dots" id="dots-container">
         </div>
 
     <div class="camera-container">
-        <video id="video" autoplay playsinline></video>
+        <video id="video" autoplay playsinline muted></video>
         <canvas id="overlay"></canvas>
         <div id="arrow" class="hint-arrow">⬅️</div>
         <div id="instr" class="instr-badge">Впишіть обличчя в овал</div>
     </div>
     <p style="color: #64748b; font-size: 0.85rem;">Система випадковим чином перевіряє вашу присутність</p>
+    <p id="mode-label" style="color: #94a3b8; font-size: 0.7rem; margin: 0;"></p>
 </div>
 
 <div class="card hidden" id="otp-section">
@@ -64,6 +66,245 @@
     const ctx    = canvas.getContext('2d');
     const instr  = document.getElementById('instr');
     const arrow  = document.getElementById('arrow');
+    const dotsContainer = document.getElementById('dots-container');
+    const modeLabel     = document.getElementById('mode-label');
+
+    // ── Вибір процедури ───────────────────────────────────────────────────────
+    //   'improved' — вдосконалена (серверний MediaPipe, калібрування, EAR, таймаути)
+    //   'baseline' — базова (клієнтський FaceMesh, абсолютні пороги), запасна
+    // Базову можна ввімкнути явно: /login/<user>/?liveness=baseline.
+    // Якщо сервер не може аналізувати кадри — автоматичний перехід на базову.
+    let mode = new URLSearchParams(location.search).get('liveness') === 'baseline' ? 'baseline' : 'improved';
+
+    const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+    // ── Спільні елементи інтерфейсу ──────────────────────────────────────────
+    function drawMask(strokeStyle) {
+        canvas.width  = video.videoWidth;
+        canvas.height = video.videoHeight;
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        ctx.fillStyle = "rgba(248, 250, 252, 0.7)";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.globalCompositeOperation = 'destination-out';
+        ctx.beginPath();
+        ctx.ellipse(canvas.width / 2, canvas.height / 2, 110, 150, 0, 0, 2 * Math.PI);
+        ctx.fill();
+        ctx.globalCompositeOperation = 'source-over';
+
+        ctx.strokeStyle = strokeStyle;
+        ctx.lineWidth = 4;
+        ctx.stroke();
+    }
+
+    function renderDots(n) {
+        dotsContainer.innerHTML = '';
+        for (let i = 0; i < n; i++) {
+            const dot = document.createElement('div');
+            dot.id = `d${i}`;
+            dot.className = i === 0 ? 'dot active' : 'dot';
+            dotsContainer.appendChild(dot);
+        }
+    }
+
+    function setDot(i, cls) {
+        const dot = document.getElementById(`d${i}`);
+        if (dot) dot.className = cls ? `dot ${cls}` : 'dot';
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    // ВДОСКОНАЛЕНА ПРОЦЕДУРА (перенесено з Liveness Lab, runImproved)
+    // ══════════════════════════════════════════════════════════════════════════
+    const P = {
+        interval: 100,           // мс між запитами (послідовно, не частіше)
+        frameWidth: 320,         // кадр зменшується до 320 px
+        jpegQuality: 0.6,
+        calibMs: 1000,           // калібрування EAR0 та r0
+        calibMinFrames: 3,       // менше кадрів з обличчям — відмова (FTA)
+        earRatio: 0.78,          // моргання: EAR < 0.78·EAR0
+        earRecover: 0.90,        // EAR після моргання має повернутись до 90% від базового
+        blinkMaxMs: 700,         // максимальна тривалість "закритого ока", щоб це було морганням
+        turnTau: 0.12,           // поворот: відхилення r від r0 більше за τ
+        stepTimeout: 9000,       // таймаут одного кроку
+        pauseMs: 800,            // пауза між кроками
+        minTurnReactionMs: 250,  // поворот швидше за це після показу завдання вважається підозрілим
+        jumpRatio: 0.20,         // допустима відносна зміна розміру обличчя між сусідніми кадрами
+        jumpCenter: 0.20,        // допустимий зсув центру обличчя між кадрами (частка ширини кадру)
+        jumpMaxGapMs: 300,       // порівнюємо лише кадри, що йдуть майже один за одним
+        centerFrames: 3,         // кадрів у нейтральному положенні перед знімком для верифікації
+        retryDelayMs: 3000       // пауза перед новою спробою після відмови
+    };
+
+    const TASK_TEXT = {
+        blink:  "Кліпніть очима",
+        left:   "Поверніть голову ліворуч",
+        right:  "Поверніть голову праворуч",
+        center: "Дивіться прямо і не рухайтесь"
+    };
+
+    const grab = document.createElement('canvas');
+    const gctx = grab.getContext('2d');
+    let ovalStroke = "#4f46e5";
+
+    class DetectUnavailable extends Error {}
+
+    async function detect() {
+        const W = P.frameWidth, H = Math.round(P.frameWidth * video.videoHeight / video.videoWidth);
+        grab.width = W; grab.height = H;
+        gctx.drawImage(video, 0, 0, W, H);
+        let res;
+        try {
+            res = await fetch("{% url 'liveness_detect' %}", {
+                method:  'POST',
+                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': '{{ csrf_token }}' },
+                body:    JSON.stringify({ image: grab.toDataURL('image/jpeg', P.jpegQuality) })
+            });
+        } catch (e) {
+            throw new DetectUnavailable(e.message);
+        }
+        if (res.status === 503) throw new DetectUnavailable('server');
+        if (!res.ok) return { faceFound: false };
+        return res.json();
+    }
+
+    const median  = a => { const s = [...a].sort((x, y) => x - y); return s[Math.floor(s.length / 2)]; };
+    const shuffle = a => { a = [...a]; for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
+
+    async function runImproved() {
+        const c = P;
+        // калібрування + випадкова перестановка всіх трьох дій + нейтральне положення для знімка
+        const tasks = ['calibrate', ...shuffle(['blink', 'left', 'right']), 'center'];
+        renderDots(tasks.length);
+        const t0 = performance.now();
+
+        // ── калібрування ──
+        instr.innerText = "Дивіться прямо…";
+        const ears = [], noses = [], tc = performance.now();
+        while (performance.now() - tc < c.calibMs) {
+            const t1 = performance.now(); const d = await detect();
+            if (d.faceFound) { ears.push(d.ear); noses.push(d.noseRatio); }
+            await sleep(Math.max(0, c.interval - (performance.now() - t1)));
+        }
+        if (ears.length < c.calibMinFrames) {
+            setDot(0, 'fail');
+            return { accepted: false, failed: 'calibrate', ms: performance.now() - t0 };
+        }
+        const baseEar = median(ears), baseNose = median(noses);
+        setDot(0, 'done');
+
+        // безперервність обличчя: різкий стрибок розміру/положення між сусідніми кадрами
+        let prev = null;
+        const jumped = (d, now) => {
+            const p = prev; prev = { t: now, w: d.faceWidth, e: d.eyeDist, cx: d.faceCx };
+            if (!p || now - p.t > c.jumpMaxGapMs) return false;
+            const rel = (a, b) => Math.abs(a - b) / Math.max(a, 1e-6);
+            return rel(p.w, d.faceWidth) > c.jumpRatio || rel(p.e, d.eyeDist) > c.jumpRatio
+                || Math.abs(p.cx - d.faceCx) > c.jumpCenter;
+        };
+
+        for (let i = 1; i < tasks.length; i++) {
+            const id = tasks[i];
+            setDot(i, 'active');
+            instr.innerText = TASK_TEXT[id];
+            if (id === 'left' || id === 'right') {
+                arrow.innerText = id === 'left' ? "⬅️" : "➡️";
+                arrow.classList.add('visible');
+            }
+            const ts = performance.now();
+            let ok = false, reason = '';
+            let armed = false;                          // неправильна дія враховується лише після повернення голови в нейтраль
+            let lowSince = null, lowInvalid = false;    // стан моргання
+            let centered = 0;
+            while (performance.now() - ts < c.stepTimeout) {
+                const t1 = performance.now(); const d = await detect();
+                if (d.faceFound) {
+                    const now = performance.now();
+                    if (jumped(d, now)) { reason = 'continuity'; break; }
+                    const dn = d.noseRatio - baseNose;  // відхилення голови від базового положення
+                    if (Math.abs(dn) < c.turnTau * 0.7) armed = true;
+
+                    if (id === 'blink') {
+                        if (d.ear < c.earRatio * baseEar) {
+                            if (lowSince === null) lowSince = now;
+                            else if (now - lowSince > c.blinkMaxMs) lowInvalid = true;   // тривале закриття ≠ моргання
+                        } else if (lowSince !== null && d.ear >= c.earRecover * baseEar) {
+                            if (!lowInvalid) ok = true;  // падіння EAR і швидке відновлення = моргання
+                            lowSince = null; lowInvalid = false;
+                        }
+                        if (!ok && armed && Math.abs(dn) > c.turnTau) reason = 'wrong_action';
+                    } else if (id === 'left') {
+                        if (dn > c.turnTau) {
+                            if (now - ts < c.minTurnReactionMs) reason = 'too_fast';
+                            else ok = true;
+                        } else if (armed && dn < -c.turnTau) reason = 'wrong_action';
+                    } else if (id === 'right') {
+                        if (dn < -c.turnTau) {
+                            if (now - ts < c.minTurnReactionMs) reason = 'too_fast';
+                            else ok = true;
+                        } else if (armed && dn > c.turnTau) reason = 'wrong_action';
+                    } else if (id === 'center') {
+                        // голова в нейтральному положенні кілька кадрів поспіль — кадр придатний для верифікації
+                        if (Math.abs(dn) < c.turnTau * 0.7) { if (++centered >= c.centerFrames) ok = true; }
+                        else centered = 0;
+                    }
+                }
+                if (ok || reason) break;
+                await sleep(Math.max(0, c.interval - (performance.now() - t1)));
+            }
+            arrow.classList.remove('visible');
+            setDot(i, ok ? 'done' : 'fail');
+            if (!ok) return { accepted: false, failed: reason ? (reason === 'continuity' ? 'continuity' : id + ':' + reason) : id, ms: performance.now() - t0 };
+            if (id !== 'center' && i < tasks.length - 1) {
+                instr.innerText = "Дивіться прямо…";
+                await sleep(c.pauseMs);                 // пауза між кроками
+            }
+        }
+        return { accepted: true, failed: '', ms: performance.now() - t0 };
+    }
+
+    function failText(failed) {
+        if (failed === 'calibrate')  return "Обличчя не знайдено";
+        if (failed === 'continuity') return "Обличчя в кадрі різко змінилось";
+        const reason = failed.split(':')[1];
+        if (reason === 'wrong_action') return "Виконано не ту дію";
+        if (reason === 'too_fast')     return "Надто швидкий рух";
+        return "Час на дію вичерпано";
+    }
+
+    function improvedDrawLoop() {
+        if (mode !== 'improved') return;
+        if (video.videoWidth) drawMask(ovalStroke);
+        requestAnimationFrame(improvedDrawLoop);
+    }
+
+    async function startImproved() {
+        mode = 'improved';
+        modeLabel.innerText = "Процедура: вдосконалена";
+        ovalStroke = "#4f46e5";
+        try {
+            const r = await runImproved();
+            console.log('[liveness] improved', r);
+            if (r.accepted) {
+                ovalStroke = "#10b981";
+                instr.innerText = "ГОТОВО! ПЕРЕВІРКА...";
+                captureAndVerify();
+            } else {
+                ovalStroke = "#ef4444";
+                instr.innerText = `${failText(r.failed)}. Повтор…`;
+                await sleep(P.retryDelayMs);
+                startImproved();
+            }
+        } catch (e) {
+            if (!(e instanceof DetectUnavailable)) throw e;
+            console.warn('[liveness] сервер недоступний, перехід на базову процедуру:', e.message);
+            arrow.classList.remove('visible');
+            startBaseline();
+        }
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    // БАЗОВА ПРОЦЕДУРА (запасна): клієнтський FaceMesh, абсолютні пороги
+    // ══════════════════════════════════════════════════════════════════════════
 
     // ── Стан машини ──────────────────────────────────────────────────────────
     let currentStepIndex = 0;
@@ -87,62 +328,47 @@
         { id: 'right', text: "Поверніть голову праворуч" }
     ];
 
-    let taskQueue = [{ id: 'align', text: "Впишіть обличчя в овал" }];
-    const shuffled = [...taskPool].sort(() => 0.5 - Math.random()).slice(0, 2);
-    taskQueue = taskQueue.concat(shuffled);
+    let taskQueue = [];
 
-    // Перевіряємо чи остання задача — поворот голови
-    // (для blink центрування не потрібне — голова і так прямо)
-    function lastTaskIsHeadTurn() {
-        const last = taskQueue[taskQueue.length - 1];
-        return last.id === 'left' || last.id === 'right';
+    function startBaseline() {
+        mode = 'baseline';
+        modeLabel.innerText = "Процедура: базова";
+        taskQueue = [{ id: 'align', text: "Впишіть обличчя в овал" }]
+            .concat([...taskPool].sort(() => 0.5 - Math.random()).slice(0, 2));
+        currentStepIndex = 0;
+        phase            = 'tasks';
+        centerFrames     = 0;
+        renderDots(taskQueue.length);
+        instr.innerText = taskQueue[0].text;
+
+        // ── FaceMesh ──────────────────────────────────────────────────────────
+        const faceMesh = new FaceMesh({
+            locateFile: (f) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${f}`
+        });
+        faceMesh.setOptions({
+            maxNumFaces: 1,
+            refineLandmarks: true,
+            minDetectionConfidence: 0.7
+        });
+        faceMesh.onResults(onBaselineResults);
+
+        new Camera(video, {
+            onFrame: async () => { await faceMesh.send({ image: video }); },
+            width: 640, height: 480
+        }).start();
     }
 
-    // ── Dots ──────────────────────────────────────────────────────────────────
-    const dotsContainer = document.getElementById('dots-container');
-    taskQueue.forEach((_, i) => {
-        const dot = document.createElement('div');
-        dot.id = `d${i}`;
-        dot.className = i === 0 ? 'dot active' : 'dot';
-        dotsContainer.appendChild(dot);
-    });
-
-    // ── FaceMesh ──────────────────────────────────────────────────────────────
-    const faceMesh = new FaceMesh({
-        locateFile: (f) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${f}`
-    });
-    faceMesh.setOptions({
-        maxNumFaces: 1,
-        refineLandmarks: true,
-        minDetectionConfidence: 0.7
-    });
-
-    faceMesh.onResults(results => {
-        // ── Малюємо овальну маску ─────────────────────────────────────────────
-        canvas.width  = video.videoWidth;
-        canvas.height = video.videoHeight;
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-        ctx.fillStyle = "rgba(248, 250, 252, 0.7)";
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
-        ctx.globalCompositeOperation = 'destination-out';
-        ctx.beginPath();
-        ctx.ellipse(canvas.width / 2, canvas.height / 2, 110, 150, 0, 0, 2 * Math.PI);
-        ctx.fill();
-        ctx.globalCompositeOperation = 'source-over';
-
-        // Колір овалу залежить від фази
+    function onBaselineResults(results) {
+        // ── Малюємо овальну маску; колір овалу залежить від фази ─────────────
         if (phase === 'stable') {
             // Зелений з прогресом — показуємо що рахуємо
             const progress = centerFrames / CENTER_FRAMES_NEEDED;
-            ctx.strokeStyle = `hsl(${Math.round(240 + progress * 120)}, 80%, 50%)`;
+            drawMask(`hsl(${Math.round(240 + progress * 120)}, 80%, 50%)`);
         } else if (phase === 'done') {
-            ctx.strokeStyle = "#10b981";
+            drawMask("#10b981");
         } else {
-            ctx.strokeStyle = "#4f46e5";
+            drawMask("#4f46e5");
         }
-        ctx.lineWidth = 4;
-        ctx.stroke();
 
         // Якщо фото вже знято або немає landmarks — нічого далі не робимо
         if (phase === 'done' || !results.multiFaceLandmarks?.[0]) return;
@@ -176,13 +402,13 @@
             }
 
             if (success) {
-                document.getElementById(`d${currentStepIndex}`).className = 'dot done';
+                setDot(currentStepIndex, 'done');
                 currentStepIndex++;
                 arrow.classList.remove('visible');
 
                 if (currentStepIndex < taskQueue.length) {
                     // Є ще завдання — переходимо до наступного
-                    document.getElementById(`d${currentStepIndex}`).className = 'dot active';
+                    setDot(currentStepIndex, 'active');
                     instr.innerText = taskQueue[currentStepIndex].text;
 
                 } else {
@@ -245,7 +471,11 @@
             }
             return;
         }
-    });
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    // ВЕРИФІКАЦІЯ (спільна для обох процедур)
+    // ══════════════════════════════════════════════════════════════════════════
 
     // ── Знімаємо фото і відправляємо на сервер ────────────────────────────────
     function captureAndVerify() {
@@ -296,13 +526,16 @@
 
     // ── Скидання стану для нової спроби ──────────────────────────────────────
     function resetLiveness() {
+        arrow.classList.remove('visible');
+        if (mode === 'improved') {
+            // нова спроба — нове калібрування і новий випадковий порядок дій
+            startImproved();
+            return;
+        }
         currentStepIndex = 0;
         phase            = 'tasks';
         centerFrames     = 0;
-        arrow.classList.remove('visible');
-        taskQueue.forEach((_, i) => {
-            document.getElementById(`d${i}`).className = i === 0 ? 'dot active' : 'dot';
-        });
+        taskQueue.forEach((_, i) => setDot(i, i === 0 ? 'active' : ''));
         instr.innerText = taskQueue[0].text;
     }
 
@@ -323,12 +556,15 @@
     }
 
     // ── Запуск камери ─────────────────────────────────────────────────────────
-    navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480 } }).then(s => {
+    navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480 } }).then(async s => {
         video.srcObject = s;
-        new Camera(video, {
-            onFrame: async () => { await faceMesh.send({ image: video }); },
-            width: 640, height: 480
-        }).start();
+        if (mode === 'baseline') { startBaseline(); return; }
+
+        await new Promise(r => video.readyState >= 1 ? r() : (video.onloadedmetadata = r));
+        requestAnimationFrame(improvedDrawLoop);
+        instr.innerText = "Впишіть обличчя в овал";
+        await sleep(1000);
+        startImproved();
     });
 </script>
 </body>
