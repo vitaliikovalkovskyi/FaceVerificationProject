@@ -25,7 +25,6 @@ local_settings.py
 # Ігноруємо фото користувачів та кадри з камери
 media/temp_captures/*
 media/users/*
-media/uploads/*
 # Дозволяємо Git бачити саму папку media, якщо там є .gitkeep
 !media/.gitkeep
 
@@ -47,3 +46,5 @@ desktop.ini
 # ПРИМІТКА: Ми НЕ ігноруємо /static/, якщо там твої стилі (CSS/JS)
 # Якщо ти хочеш ігнорувати лише зібрану статику, використовуй:
 # staticfiles/
+# --- Кеш embedding бенчмарку ---
+.benchmark_cache/

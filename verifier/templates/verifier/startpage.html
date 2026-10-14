@@ -150,81 +150,6 @@
             transform: translateY(0);
         }
 
-        /* --- 6. RESULTS & IMAGES --- */
-        .results-area {
-            text-align: center;
-            margin-top: 2rem;
-            width: 100%;
-        }
-
-        .images-container {
-            display: flex;
-            flex-wrap: wrap;
-            justify-content: center;
-            gap: 2rem;
-            margin-top: 2rem;
-        }
-
-        .image-wrapper {
-            background: white;
-            padding: 10px;
-            border-radius: var(--radius-md);
-            box-shadow: var(--shadow-md);
-        }
-
-        .image-wrapper h2 {
-            font-size: 1rem;
-            margin-bottom: 10px;
-            color: var(--secondary-color);
-        }
-
-        img {
-            max-width: 100%;
-            width: 300px;
-            height: auto;
-            border-radius: 8px;
-            display: block;
-        }
-
-        .hidden { display: none !important; }
-
-        .status-message {
-            font-size: 1.25rem;
-            font-weight: 600;
-            padding: 1rem;
-            border-radius: var(--radius-md);
-            margin-top: 1rem;
-            display: inline-block;
-        }
-
-        .result-true, .result-success { color: var(--success-color); background: rgba(16, 185, 129, 0.1); }
-        .result-false { color: var(--error-color); background: rgba(239, 68, 68, 0.1); }
-
-        /* --- 7. LOADER --- */
-        .loader-container {
-            position: fixed;
-            top: 0; left: 0; width: 100%; height: 100%;
-            background-color: rgba(255, 255, 255, 0.7);
-            backdrop-filter: blur(5px);
-            display: none;
-            justify-content: center;
-            align-items: center;
-            z-index: 2000;
-        }
-
-        .loader {
-            border: 4px solid #e2e8f0;
-            border-radius: 50%;
-            border-top: 4px solid var(--primary-color);
-            width: 60px;
-            height: 60px;
-            animation: spin 1s linear infinite;
-        }
-
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-        }
     </style>
 </head>
 
@@ -236,116 +161,27 @@
 
         <div class="cards-grid">
             <div class="card">
-                <h2>Магістерська робота</h2>
+                <h2>Біометрична автентифікація</h2>
                 <div class="card-actions">
                     <a href="{% url 'magisterjob' %}" style="width: 100%;">
-                        <button class="btn">
-                            *КЛІК*
-                        </button>
+                        <button class="btn">Реєстрація (Multi-Reference + 2FA)</button>
+                    </a>
+                    <a href="{% url 'user_list' %}" style="width: 100%;">
+                        <button class="btn">Користувачі та вхід</button>
                     </a>
                 </div>
             </div>
 
             <div class="card">
-                <h2>Бакалаврська робота</h2>
+                <h2>Бенчмарк</h2>
                 <div class="card-actions">
-                    <a href="{% url 'home' %}" style="width: 100%;">
-                        <button class="btn">
-                            Біометрична аутентифікація за обличчям
-                        </button>
+                    <a href="{% url 'benchmark_page' %}" style="width: 100%;">
+                        <button class="btn">Метрики якості системи</button>
                     </a>
-                    <a href="{% url 'faceAnalise' %}" style="width: 100%;">
-                        <button class="btn">
-                            Аналізування облич
-                        </button>
-                    </a>
-                </div>
-            </div>
-        </div>
-
-        <div class="results-area">
-            <p id="result" class="status-message"></p>
-            
-            <div class="images-container">
-                <div id="test-photo-container" class="image-wrapper hidden">
-                    <h2>Test Photo</h2>
-                    <img id="test-photo" src="/static/testPhoto.jpg" alt="Test Photo">
-                </div>
-                <div id="captured-photo-container" class="image-wrapper hidden">
-                    <h2>Captured Photo</h2>
-                    <img id="captured-photo" src="" alt="Captured Photo">
                 </div>
             </div>
         </div>
     </div>
 
-    <div id="loader-container" class="loader-container">
-        <div class="loader"></div>
-    </div>
-
-    <script>
-        function showLoader() {
-            document.getElementById('loader-container').style.display = 'flex';
-            const resEl = document.getElementById('result');
-            resEl.innerText = '';
-            resEl.className = 'status-message'; // reset class
-        }
-
-        function hideLoader() {
-            document.getElementById('loader-container').style.display = 'none';
-        }
-
-        function verifyImage() {
-            showLoader();
-            fetch('/verify-image/')
-                .then(response => response.json())
-                .then(data => {
-                    hideLoader();
-                    const resultElement = document.getElementById('result');
-                    if (data.verified !== undefined) {
-                        resultElement.innerText = "Is verified: " + data.verified;
-                        resultElement.className = 'status-message ' + (data.verified ? 'result-true' : 'result-false');
-                        
-                        document.getElementById('captured-photo').src = "/static/captured_image.jpg?" + new Date().getTime();
-                        document.getElementById('captured-photo-container').classList.remove('hidden');
-                    } else {
-                        resultElement.innerText = "Error: " + data.error;
-                        resultElement.className = 'status-message result-false';
-                    }
-                })
-                .catch(error => {
-                    hideLoader();
-                    const resultElement = document.getElementById('result');
-                    resultElement.innerText = "Error: " + error;
-                    resultElement.className = 'status-message result-false';
-                });
-        }
-
-        function captureTestPhoto() {
-            showLoader();
-            fetch('/capture-test-photo/')
-                .then(response => response.json())
-                .then(data => {
-                    hideLoader();
-                    const resultElement = document.getElementById('result');
-                    if (data.success) {
-                        resultElement.innerText = "New test photo captured successfully.";
-                        resultElement.className = 'status-message result-success';
-                        
-                        document.getElementById('test-photo').src = "/static/testPhoto.jpg?" + new Date().getTime();
-                        document.getElementById('test-photo-container').classList.remove('hidden');
-                    } else {
-                        resultElement.innerText = "Error: " + data.error;
-                        resultElement.className = 'status-message result-false';
-                    }
-                })
-                .catch(error => {
-                    hideLoader();
-                    const resultElement = document.getElementById('result');
-                    resultElement.innerText = "Error: " + error;
-                    resultElement.className = 'status-message result-false';
-                });
-        }
-    </script>
 </body>
 </html>

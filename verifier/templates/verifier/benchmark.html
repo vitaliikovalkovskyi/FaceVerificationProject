@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Accuracy Benchmark | Khrystyna Shmyhelska Thesis</title>
+    <title>Бенчмарк точності | FaceVerificationProject</title>
     <style>
         :root {
             --primary-color: #2563eb;
@@ -408,6 +408,8 @@
                 document.getElementById('final-total').textContent = data.total;
 
                 log.innerHTML += `<br><b style="color:var(--success-color)">[FINISH] ${data.dataset} | Поріг: ${data.threshold}</b>`;
+                log.innerHTML += `<br><span class="res-info">Оцінено: ${data.effective} (свої: ${data.pos_n}, чужі: ${data.neg_n}) | Пропущено: ${data.skipped} | Час: ${data.seconds} с</span>`;
+                log.scrollTop = log.scrollHeight;
                 document.getElementById('finish-sound').play();
                 
                 currentES.close();

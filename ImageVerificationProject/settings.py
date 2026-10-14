@@ -15,6 +15,12 @@ from pathlib import Path
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
+# DeepFace і OpenCV на Windows не відкривають файли, якщо шлях містить
+# не-ASCII символи (напр. «Магістратура»). Тому на Windows підставляємо
+# короткий 8.3-шлях до проєкту — він складається лише з ASCII.
+from verifier.win_paths import ascii_path
+BASE_DIR = Path(ascii_path(BASE_DIR))
+
 
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/5.0/howto/deployment/checklist/
