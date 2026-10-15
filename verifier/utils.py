@@ -8,6 +8,7 @@ import threading
 import contextlib
 import numpy as np
 import kagglehub
+from PIL import Image
 from deepface import DeepFace
 from django.conf import settings
 
@@ -36,9 +37,18 @@ IMG_EXTS   = ('.jpg', '.jpeg', '.png', '.webp')
 PAIRS_SEED = 42   # фіксований набір пар: обидва режими й повторні запуски бачать ті самі пари
 
 # ── Детектори ────────────────────────────────────────────────────────────────
-DETECTOR_REF  = "opencv"       # еталони в режимі Multi-Reference
+# Експеримент (40 пар на датасет, EER): RetinaFace для еталонів не гірший за opencv
+# (RMFD 0.327 проти 0.453) і збігається з реальною реєстрацією.
+DETECTOR_REF  = "retinaface"   # еталони в режимі Multi-Reference
 DETECTOR_TEST = "retinaface"   # тестові фото та стандартний режим
-RETINAFACE_UPSCALE = True      # False — RetinaFace без збільшення кадру до 1024 px
+
+# RetinaFace за замовчуванням збільшує фото до 1024 px. Великим фото (mfr2 160 px,
+# LFW 250 px) це шкодить і в 10–25 разів сповільнює (EER mfr2 0.15 → 0.10,
+# LFW 0.125 → 0.05 без збільшення), а дрібним (RMFD, медіана 110–132 px) потрібно
+# (RMFD 0.347 зі збільшенням проти 0.473 без). Тому "auto": збільшувати лише фото,
+# коротша сторона яких менша за UPSCALE_MIN_SIDE. True/False — завжди / ніколи.
+RETINAFACE_UPSCALE = "auto"
+UPSCALE_MIN_SIDE   = 150
 
 # ── Кеш embedding ────────────────────────────────────────────────────────────
 # Embedding фото не залежить від порогу, режиму чи вибірки, тому кожне фото
@@ -79,12 +89,24 @@ def _is_image(fname: str) -> bool:
     return fname.lower().endswith(IMG_EXTS)
 
 
-def _represent_all(img_path: str, detector: str, upscale: bool) -> "list[tuple[np.ndarray, float]] | None":
+def _resolve_upscale(img_path: str, upscale) -> bool:
+    """Перетворює режим "auto" на True/False за розміром фото."""
+    if upscale != "auto":
+        return bool(upscale)
+    try:
+        with Image.open(img_path) as im:
+            return min(im.size) < UPSCALE_MIN_SIDE
+    except Exception:
+        return True
+
+
+def _represent_all(img_path: str, detector: str, upscale) -> "list[tuple[np.ndarray, float]] | None":
     """
     L2-нормалізовані ArcFace embedding усіх облич на фото та впевненість детектора
     (як DeepFace.represent з enforce_detection=False). None — фото не вдалося обробити.
     """
     global _cache_dirty
+    upscale = _resolve_upscale(img_path, upscale)
     st = os.stat(img_path)
     key = (os.path.normcase(os.path.abspath(img_path)), st.st_size, st.st_mtime_ns,
            MODEL_NAME, detector, upscale if detector == 'retinaface' else True)
@@ -120,13 +142,13 @@ def _represent_all(img_path: str, detector: str, upscale: bool) -> "list[tuple[n
     return value
 
 
-def _get_embedding(img_path: str, detector: str = DETECTOR_TEST, upscale: bool = RETINAFACE_UPSCALE) -> "tuple[np.ndarray, float] | None":
+def _get_embedding(img_path: str, detector: str = DETECTOR_TEST, upscale=RETINAFACE_UPSCALE) -> "tuple[np.ndarray, float] | None":
     """L2-нормалізований ArcFace embedding першого обличчя та впевненість детектора."""
     faces = _represent_all(img_path, detector, upscale)
     return faces[0] if faces else None
 
 
-def _verify_distance(img1: str, img2: str, upscale: bool) -> "float | None":
+def _verify_distance(img1: str, img2: str, upscale) -> "float | None":
     """
     Відстань як у DeepFace.verify(ArcFace, retinaface, cosine, enforce_detection=False):
     мінімальна косинусна відстань між усіма обличчями двох фото.
@@ -138,7 +160,7 @@ def _verify_distance(img1: str, img2: str, upscale: bool) -> "float | None":
     return min(float(1.0 - np.dot(x[0], y[0])) for x in a for y in b)
 
 
-def _build_ref_embedding(photo_paths: list, detector_ref: str = DETECTOR_REF, upscale: bool = RETINAFACE_UPSCALE) -> "np.ndarray | None":
+def _build_ref_embedding(photo_paths: list, detector_ref: str = DETECTOR_REF, upscale=RETINAFACE_UPSCALE) -> "np.ndarray | None":
     """Multi-Reference: weighted mean + outlier removal."""
     photo_paths = photo_paths[:5] # Обмеження для стабільності
     raw_data = []

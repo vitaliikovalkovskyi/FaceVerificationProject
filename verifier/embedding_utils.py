@@ -24,9 +24,18 @@ from retinaface import RetinaFace as _retinaface
 # ── Константи ────────────────────────────────────────────────────────────────
 MODEL_NAME      = "ArcFace"
 DETECTOR        = "retinaface"
-BASE_THRESHOLD  = 0.68   # м'якший за дефолтний 0.75 — краще для масок
-MAX_THRESHOLD   = 0.82   # верхня межа безпеки
 EMBEDDING_DIM   = 512    # ArcFace завжди 512
+
+# ── Поріг верифікації (калібрування під FAR ≤ 1 %) ───────────────────────────
+# Підібрано на половині людей mfr2+LFW з кешу бенчмарку (106 своїх / 9858 чужих пар),
+# перевірено на іншій половині (89 / 9167): FAR 0.68 %, FRR 29.2 %.
+# Для порівняння на тій самій перевірці: фіксований 0.68 — FAR 1.32 %, FRR 25.8 %;
+# стара формула 0.68 + 0.5·intra (≤ 0.82) — FAR 9.9 %, FRR 7.9 %.
+# Поправка в бік «більший розкид еталонів → м'якший поріг» на цих даних лише гіршала.
+BASE_THRESHOLD  = 0.64   # глобальний поріг косинусної відстані
+INTRA_REFERENCE = 0.44   # типова (медіанна) відстань між еталонними фото однієї людини
+ADAPT_COEF      = -1.0   # більший розкид еталонів → суворіший поріг
+ADAPT_MAX       = 0.02   # межа персональної поправки
 TTA_ANGLES      = (-5, 5)
 
 
@@ -191,15 +200,16 @@ def compute_personal_threshold(embeddings: list[np.ndarray]) -> float:
     Обчислює персональний поріг верифікації на основі варіативності
     еталонних фото людини.
 
-    Логіка: якщо між еталонними фото вже є природна варіація (різне
-    освітлення, кут), поріг трохи збільшується — бо і жива верифікація
-    матиме таку ж варіацію.
+    Логіка: якщо еталонні фото сильно різняться між собою, їхній середній
+    вектор «розмитий» і лежить ближче до чужих облич, тому поріг трохи
+    суворішає; узгоджені еталони дозволяють трохи м'якший поріг.
+    Поправка обмежена ±ADAPT_MAX навколо каліброваного BASE_THRESHOLD.
 
     Args:
         embeddings: результат embed_reference_photos
 
     Returns:
-        float поріг в діапазоні [BASE_THRESHOLD, MAX_THRESHOLD]
+        float поріг в діапазоні [BASE_THRESHOLD − ADAPT_MAX, BASE_THRESHOLD + ADAPT_MAX]
     """
     if len(embeddings) < 2:
         return BASE_THRESHOLD
@@ -211,11 +221,10 @@ def compute_personal_threshold(embeddings: list[np.ndarray]) -> float:
             dist = float(1.0 - np.dot(embeddings[i], embeddings[j]))
             intra_distances.append(dist)
 
-    mean_intra = np.mean(intra_distances)
+    mean_intra = float(np.mean(intra_distances))
 
-    # Адаптивний поріг: base + половина внутрішньокласової варіації
-    adaptive = BASE_THRESHOLD + (mean_intra * 0.5)
-    return float(min(adaptive, MAX_THRESHOLD))
+    adjustment = np.clip(ADAPT_COEF * (mean_intra - INTRA_REFERENCE), -ADAPT_MAX, ADAPT_MAX)
+    return float(BASE_THRESHOLD + adjustment)
 
 
 # ── 5. Верифікація через cosine similarity ────────────────────────────────────
