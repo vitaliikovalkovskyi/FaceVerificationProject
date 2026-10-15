@@ -52,8 +52,8 @@
 </div>
 
 <div class="card hidden" id="otp-section">
-    <h2 style="color: var(--error);">2FA Перевірка</h2>
-    <p style="color: #64748b;">Біометрія не пройшла. Введіть OTP код:</p>
+    <h2 id="otp-title" style="color: var(--error);">2FA Перевірка</h2>
+    <p id="otp-reason" style="color: #64748b;">Біометрія не пройшла. Введіть OTP код:</p>
     <form onsubmit="verifyOTP(event)">
         <input type="text" id="otp-code" style="width: 200px; font-size: 2rem; letter-spacing: 8px; text-align: center; padding: 12px; border: 2px solid #e2e8f0; border-radius: 12px;" placeholder="000000" maxlength="6">
         <button type="submit" style="width: 100%; padding: 14px; background: var(--primary); color: white; border: none; border-radius: 12px; margin-top: 20px; font-weight: 700; cursor: pointer;">ПІДТВЕРДИТИ</button>
@@ -556,7 +556,13 @@
     }
 
     // ── Запуск камери ─────────────────────────────────────────────────────────
-    navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480 } }).then(async s => {
+    // Якщо 3 спроби біометрією вже вичерпано — одразу OTP, без камери
+    const FACE_BLOCKED = {{ face_blocked|yesno:"true,false" }};
+    if (FACE_BLOCKED) {
+        document.getElementById('otp-reason').innerText = "Вичерпано 3 спроби біометрією. Введіть OTP код:";
+        document.getElementById('liveness-ui').classList.add('hidden');
+        document.getElementById('otp-section').classList.remove('hidden');
+    } else navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480 } }).then(async s => {
         video.srcObject = s;
         if (mode === 'baseline') { startBaseline(); return; }
 

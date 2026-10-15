@@ -8,10 +8,12 @@ import threading
 import contextlib
 import numpy as np
 import kagglehub
+from PIL import Image
 from deepface import DeepFace
 from django.conf import settings
 
 from .embedding_utils import retinaface_no_upscale
+from . import occlusion
 
 # ── MFR2: маркери незамаскованих фото ────────────────────────────────────────
 MFR2_NO_MASK_INDICES = {
@@ -36,9 +38,18 @@ IMG_EXTS   = ('.jpg', '.jpeg', '.png', '.webp')
 PAIRS_SEED = 42   # фіксований набір пар: обидва режими й повторні запуски бачать ті самі пари
 
 # ── Детектори ────────────────────────────────────────────────────────────────
-DETECTOR_REF  = "opencv"       # еталони в режимі Multi-Reference
+# Експеримент (40 пар на датасет, EER): RetinaFace для еталонів не гірший за opencv
+# і збігається з реальною реєстрацією.
+DETECTOR_REF  = "retinaface"   # еталони в режимі Multi-Reference
 DETECTOR_TEST = "retinaface"   # тестові фото та стандартний режим
-RETINAFACE_UPSCALE = True      # False — RetinaFace без збільшення кадру до 1024 px
+
+# RetinaFace за замовчуванням збільшує фото до 1024 px. Великим фото (mfr2 160 px,
+# LFW 250 px) це шкодить і в 10–25 разів сповільнює (EER mfr2 0.15 → 0.10,
+# LFW 0.125 → 0.05 без збільшення), а дрібним (~100 px, як у вилученому RMFD) потрібно
+# (там EER 0.347 зі збільшенням проти 0.473 без). Тому "auto": збільшувати лише фото,
+# коротша сторона яких менша за UPSCALE_MIN_SIDE. True/False — завжди / ніколи.
+RETINAFACE_UPSCALE = "auto"
+UPSCALE_MIN_SIDE   = 150
 
 # ── Кеш embedding ────────────────────────────────────────────────────────────
 # Embedding фото не залежить від порогу, режиму чи вибірки, тому кожне фото
@@ -79,12 +90,24 @@ def _is_image(fname: str) -> bool:
     return fname.lower().endswith(IMG_EXTS)
 
 
-def _represent_all(img_path: str, detector: str, upscale: bool) -> "list[tuple[np.ndarray, float]] | None":
+def _resolve_upscale(img_path: str, upscale) -> bool:
+    """Перетворює режим "auto" на True/False за розміром фото."""
+    if upscale != "auto":
+        return bool(upscale)
+    try:
+        with Image.open(img_path) as im:
+            return min(im.size) < UPSCALE_MIN_SIDE
+    except Exception:
+        return True
+
+
+def _represent_all(img_path: str, detector: str, upscale) -> "list[tuple[np.ndarray, float]] | None":
     """
     L2-нормалізовані ArcFace embedding усіх облич на фото та впевненість детектора
     (як DeepFace.represent з enforce_detection=False). None — фото не вдалося обробити.
     """
     global _cache_dirty
+    upscale = _resolve_upscale(img_path, upscale)
     st = os.stat(img_path)
     key = (os.path.normcase(os.path.abspath(img_path)), st.st_size, st.st_mtime_ns,
            MODEL_NAME, detector, upscale if detector == 'retinaface' else True)
@@ -120,13 +143,13 @@ def _represent_all(img_path: str, detector: str, upscale: bool) -> "list[tuple[n
     return value
 
 
-def _get_embedding(img_path: str, detector: str = DETECTOR_TEST, upscale: bool = RETINAFACE_UPSCALE) -> "tuple[np.ndarray, float] | None":
+def _get_embedding(img_path: str, detector: str = DETECTOR_TEST, upscale=RETINAFACE_UPSCALE) -> "tuple[np.ndarray, float] | None":
     """L2-нормалізований ArcFace embedding першого обличчя та впевненість детектора."""
     faces = _represent_all(img_path, detector, upscale)
     return faces[0] if faces else None
 
 
-def _verify_distance(img1: str, img2: str, upscale: bool) -> "float | None":
+def _verify_distance(img1: str, img2: str, upscale) -> "float | None":
     """
     Відстань як у DeepFace.verify(ArcFace, retinaface, cosine, enforce_detection=False):
     мінімальна косинусна відстань між усіма обличчями двох фото.
@@ -138,7 +161,7 @@ def _verify_distance(img1: str, img2: str, upscale: bool) -> "float | None":
     return min(float(1.0 - np.dot(x[0], y[0])) for x in a for y in b)
 
 
-def _build_ref_embedding(photo_paths: list, detector_ref: str = DETECTOR_REF, upscale: bool = RETINAFACE_UPSCALE) -> "np.ndarray | None":
+def _build_ref_embedding(photo_paths: list, detector_ref: str = DETECTOR_REF, upscale=RETINAFACE_UPSCALE) -> "np.ndarray | None":
     """Multi-Reference: weighted mean + outlier removal."""
     photo_paths = photo_paths[:5] # Обмеження для стабільності
     raw_data = []
@@ -176,6 +199,22 @@ def _build_ref_embedding(photo_paths: list, detector_ref: str = DETECTOR_REF, up
 def _cosine_dist(a: np.ndarray, b: np.ndarray) -> float:
     return float(1.0 - np.dot(a, b))
 
+def _eer(dists: list, labels: list) -> "dict | None":
+    """
+    EER — точка, де FAR = FRR; не залежить від обраного порогу.
+    Повертає EER, поріг у цій точці та точність на ньому.
+    """
+    d, pos = np.array(dists), np.array(labels, dtype=bool)
+    if not pos.any() or pos.all():
+        return None
+    best = None
+    for th in np.unique(d):
+        far = np.mean(d[~pos] <= th); frr = np.mean(d[pos] > th)
+        if best is None or abs(far - frr) < best[0]:
+            best = (abs(far - frr), (far + frr) / 2, float(th))
+    _, eer, th = best
+    return {'eer': float(eer), 'eer_threshold': th, 'eer_accuracy': float(np.mean((d <= th) == pos))}
+
 def _pct(done: int, total: int) -> int:
     return int(done / total * 100) if total > 0 else 0
 
@@ -190,10 +229,6 @@ def _safe_index(filename: str) -> int:
         return -1
 
 def _rel_path(full_path: str, dataset: str) -> str:
-    if dataset == 'rmfd':
-        for marker in ('AFDB_masked_face_dataset', 'AFDB_face_dataset'):
-            if marker in full_path:
-                return marker + '/' + full_path.split(marker + os.sep)[-1].replace(os.sep, '/')
     return os.path.basename(full_path)
 
 # ── Завантажувачі пар ─────────────────────────────────────────────────────────
@@ -209,7 +244,7 @@ def _load_lfw_pairs(limit: int) -> list:
     valid_people = [p for p in people if len([f for f in os.listdir(os.path.join(lfw_root, p)) if _is_image(f)]) >= 2]
 
     rng.shuffle(valid_people)
-    valid_people = valid_people[:limit]
+    # Пари будуються для всіх людей, тож менша вибірка — префікс більшої (і кеш спрацьовує)
 
     pairs = []
     for i in range(len(valid_people)):
@@ -232,50 +267,6 @@ def _load_lfw_pairs(limit: int) -> list:
             'ref_paths': imgs_a[:-1], 'ref_single': imgs_a[0], 'test': imgs_b[0]
         })
 
-    rng.shuffle(pairs)
-    return pairs[:limit]
-
-def _dataset_subdir(root: str, name: str) -> str:
-    """Kaggle-архів RMFD має вкладені теки виду AFDB_face_dataset/AFDB_face_dataset."""
-    path = os.path.join(root, name)
-    nested = os.path.join(path, name)
-    return nested if os.path.isdir(nested) else path
-
-def _load_rmfd_pairs(limit: int, rmfd_path: str = 'datasets/rmfd') -> list:
-    rng = random.Random(PAIRS_SEED)
-    candidates = [os.path.join(settings.BASE_DIR, rmfd_path), os.path.join(settings.BASE_DIR, 'rmfd')]
-    rmfd_root = next((c for c in candidates if os.path.isdir(c)), None)
-    if not rmfd_root:
-        # Локальної копії немає — беремо з кешу kagglehub (завантажить, якщо кешу немає)
-        print("[INFO] Завантаження RMFD через kagglehub...")
-        rmfd_root = kagglehub.dataset_download("muhammeddalkran/masked-facerecognition")
-
-    u_dir = _dataset_subdir(rmfd_root, 'AFDB_face_dataset')
-    m_dir = _dataset_subdir(rmfd_root, 'AFDB_masked_face_dataset')
-    if not (os.path.isdir(u_dir) and os.path.isdir(m_dir)): return []
-    common = sorted(list(set(os.listdir(u_dir)) & set(os.listdir(m_dir))))
-
-    pairs = []
-    for i, p_id in enumerate(common):
-        u_p, m_p = os.path.join(u_dir, p_id), os.path.join(m_dir, p_id)
-        u_f, m_f = sorted([f for f in os.listdir(u_p) if _is_image(f)]), sorted([f for f in os.listdir(m_p) if _is_image(f)])
-
-        if u_f and m_f:
-            pairs.append({
-                'id': p_id, 'is_pos': True, 'dataset': 'rmfd',
-                'ref_paths': [os.path.join(u_p, x) for x in u_f],
-                'ref_single': os.path.join(u_p, u_f[0]), 'test': os.path.join(m_p, m_f[0])
-            })
-            # Негативна
-            p_next = common[(i + 1) % len(common)]
-            m_p_next = os.path.join(m_dir, p_next)
-            m_f_next = sorted([f for f in os.listdir(m_p_next) if _is_image(f)])
-            if m_f_next:
-                pairs.append({
-                    'id': f"{p_id}_vs_{p_next}", 'is_pos': False, 'dataset': 'rmfd',
-                    'ref_paths': [os.path.join(u_p, x) for x in u_f],
-                    'ref_single': os.path.join(u_p, u_f[0]), 'test': os.path.join(m_p_next, m_f_next[0])
-                })
     rng.shuffle(pairs)
     return pairs[:limit]
 
@@ -318,14 +309,18 @@ def _load_mfr2_pairs(limit: int) -> list:
 
 # ── Головний генератор ────────────────────────────────────────────────────────
 
-def run_accuracy_generator(limit=50, threshold=0.75, dataset='mfr2', use_embedding=False, rmfd_path='datasets/rmfd',
-                           detector_ref=DETECTOR_REF, upscale=RETINAFACE_UPSCALE):
+def run_accuracy_generator(limit=50, threshold=0.75, dataset='mfr2', use_embedding=False,
+                           detector_ref=DETECTOR_REF, upscale=RETINAFACE_UPSCALE, dynamic=False):
+    """
+    dynamic=True — динамічний поріг: якщо на тестовому фото виявлено маску, діє
+    occlusion.MASK_THRESHOLD (як і при вході в систему).
+    Класифікатор маски — модель, яка не бачила ні LFW (для LFW), ні людину з тестового фото (для mfr2).
+    """
     threshold, limit = float(threshold), int(limit)
     t_start = time.perf_counter()
     yield f"data: {json.dumps({'status': 'info', 'msg': f'Dataset: {dataset.upper()} | Mode: {MODEL_NAME}'})}\n\n"
 
-    if dataset == 'rmfd': pairs = _load_rmfd_pairs(limit, rmfd_path)
-    elif dataset == 'lfw': pairs = _load_lfw_pairs(limit)
+    if dataset == 'lfw': pairs = _load_lfw_pairs(limit)
     else: pairs = _load_mfr2_pairs(limit)
 
     if not pairs:
@@ -336,6 +331,9 @@ def run_accuracy_generator(limit=50, threshold=0.75, dataset='mfr2', use_embeddi
 
     # FAR/FRR рахуються лише за оціненими парами (пропущені не входять у знаменник)
     correct, skipped, far_count, frr_count, t_pos, t_neg = 0, 0, 0, 0, 0, 0
+    all_dists, all_labels = [], []
+    masked_n = 0
+    dynamic = dynamic and occlusion.available()
     try:
         ref_cache = {}
         if use_embedding:
@@ -362,7 +360,20 @@ def run_accuracy_generator(limit=50, threshold=0.75, dataset='mfr2', use_embeddi
                     dist = _verify_distance(pair['ref_single'], pair['test'], upscale)
                     if dist is None:
                         skipped += 1; yield _noisy_event(pair['id'], index, total); continue
-                is_match = dist <= threshold
+                thr_used, masked = threshold, False
+                if dynamic:
+                    if use_embedding:
+                        probe = test_vec
+                    else:
+                        faces = _represent_all(pair['test'], DETECTOR_TEST, upscale)
+                        probe = faces[0][0] if faces else None
+                    mask_model = occlusion.benchmark_model(dataset, pair['id'].split('_vs_')[-1])
+                    masked = probe is not None and occlusion.is_masked(probe, mask_model)
+                    if masked:
+                        masked_n += 1
+                        thr_used = max(threshold, occlusion.MASK_THRESHOLD)
+                is_match = dist <= thr_used
+                all_dists.append(dist); all_labels.append(is_pos)
 
                 if is_pos: t_pos += 1
                 else: t_neg += 1
@@ -381,6 +392,8 @@ def run_accuracy_generator(limit=50, threshold=0.75, dataset='mfr2', use_embeddi
                     'result': 'MATCH' if is_match else 'NO MATCH',
                     'is_pos': is_pos,
                     'dist': round(dist, 4),
+                    'masked': masked,
+                    'thr': thr_used,
                     'img_ref': _rel_path(pair['ref_single'], pair['dataset']),
                     'img_test': _rel_path(pair['test'], pair['dataset']),
                     'status': 'processing'
@@ -395,6 +408,7 @@ def run_accuracy_generator(limit=50, threshold=0.75, dataset='mfr2', use_embeddi
     acc = (correct / eff * 100) if eff > 0 else 0
     far = (far_count / t_neg * 100) if t_neg > 0 else 0
     frr = (frr_count / t_pos * 100) if t_pos > 0 else 0
+    eer = _eer(all_dists, all_labels)
 
     res_final = {
         'progress': 100,
@@ -408,6 +422,11 @@ def run_accuracy_generator(limit=50, threshold=0.75, dataset='mfr2', use_embeddi
         'pos_n': t_pos,
         'neg_n': t_neg,
         'seconds': round(time.perf_counter() - t_start, 1),
+        'dynamic': dynamic,
+        'masked_n': masked_n,
+        'eer': f"{eer['eer'] * 100:.2f}%" if eer else '—',
+        'eer_threshold': round(eer['eer_threshold'], 4) if eer else None,
+        'eer_accuracy': f"{eer['eer_accuracy'] * 100:.2f}%" if eer else '—',
         'mode': MODEL_NAME,
         'dataset': dataset.upper(),
         'threshold': threshold,
