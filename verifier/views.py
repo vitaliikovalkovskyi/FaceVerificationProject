@@ -20,6 +20,7 @@ from .embedding_utils import (
 )
 from .utils import run_accuracy_generator
 from .liveness_core import analyze_frame, LivenessUnavailable
+from . import occlusion
 
 
 # ============================================================
@@ -204,8 +205,18 @@ def register_step2(request):
 
 # ============================================================
 # ЛОГІН — БІОМЕТРИЧНА ВЕРИФІКАЦІЯ
-# Використовує Multi-Reference Embedding + TTA.
+# Використовує Multi-Reference Embedding + TTA і динамічний поріг:
+# якщо виявлено маску, поріг піднімається до MASK_THRESHOLD.
+# 3 невдалі спроби біометрією → вхід лише через OTP. Лічильник ведеться
+# окремо для кожного користувача і скидається тільки після успішного входу.
 # ============================================================
+MAX_FACE_ATTEMPTS = 3
+
+
+def _attempts_key(username):
+    return f"face_attempts_{username}"
+
+
 def login_face_verify(request):
     if request.method == 'POST':
         username = request.POST.get('username')
@@ -217,15 +228,25 @@ def login_face_verify(request):
                 "message": "Для користувача немає еталонного embedding. Зареєструйтесь повторно.",
             })
 
-        attempts = request.session.get('face_attempts', 0) + 1
-        request.session['face_attempts'] = attempts
-        is_blocked = attempts >= 3
+        key = _attempts_key(username)
+        if request.session.get(key, 0) >= MAX_FACE_ATTEMPTS:
+            return JsonResponse({
+                "success": False, "error": "too_many_attempts",
+                "message": "Вичерпано 3 спроби біометрією. Увійдіть за OTP-кодом.",
+            })
+        attempts = request.session.get(key, 0) + 1
+        request.session[key] = attempts
+        is_blocked = attempts >= MAX_FACE_ATTEMPTS
 
         captured_path = save_base64_image(image_data, f"login_attempt_{username}.jpg")
 
         try:
             live_embedding = get_live_embedding(captured_path)
             threshold = user.personal_threshold or BASE_THRESHOLD
+            # Динамічний поріг: маска зсуває відстані, тому поріг для неї вищий
+            masked = occlusion.available() and occlusion.is_masked(live_embedding)
+            if masked:
+                threshold = max(threshold, occlusion.MASK_THRESHOLD)
             result = verify_with_embedding(
                 live_embedding=live_embedding,
                 ref_embedding=np.array(user.face_embedding),
@@ -233,25 +254,28 @@ def login_face_verify(request):
             )
 
             if result["verified"]:
-                request.session['face_attempts'] = 0
+                request.session[key] = 0
                 return JsonResponse({
                     "success": True,
                     "message": "Обличчя підтверджено!",
                     "distance": result["distance"],
                     "threshold": result["threshold"],
+                    "masked": masked,
                 })
 
             error_type = "too_many_attempts" if is_blocked else "fail"
             msg = (
-                f"3 невдалі спроби. Перехід на OTP."
+                "3 невдалі спроби. Перехід на OTP."
                 if is_blocked
-                else f"Обличчя не збігається. Відстань: {result['distance']:.3f} (поріг: {result['threshold']:.3f}). Спроба {attempts}/3."
+                else f"Обличчя не збігається{' (виявлено маску)' if masked else ''}. "
+                     f"Відстань: {result['distance']:.3f} (поріг: {result['threshold']:.3f}). Спроба {attempts}/{MAX_FACE_ATTEMPTS}."
             )
             return JsonResponse({
                 "success": False,
                 "error": error_type,
                 "message": msg,
                 "distance": result["distance"],
+                "masked": masked,
             })
 
         except Exception as e:
@@ -260,7 +284,7 @@ def login_face_verify(request):
             msg = (
                 "3 невдалі спроби (обличчя не знайдено). Перехід на OTP."
                 if is_blocked
-                else f"Обличчя не знайдено. Спроба {attempts}/3."
+                else f"Обличчя не знайдено. Спроба {attempts}/{MAX_FACE_ATTEMPTS}."
             )
             return JsonResponse({"success": False, "error": error_type, "message": msg})
 
@@ -297,6 +321,7 @@ def login_otp_verify(request):
         user = get_object_or_404(UserProfile, username=username)
         totp = pyotp.TOTP(user.totp_secret)
         if totp.verify(otp_code):
+            request.session[_attempts_key(username)] = 0
             return JsonResponse({"success": True, "message": "Вхід успішний!"})
         return JsonResponse({"success": False, "error": "Невірний код."})
     return JsonResponse({"error": "Method not allowed"}, status=405)
@@ -314,13 +339,13 @@ def benchmark_stream(request):
     threshold     = request.GET.get('threshold', 0.75)
     dataset       = request.GET.get('dataset', 'mfr2')
     use_embedding = request.GET.get('use_embedding', 'false').lower() == 'true'
-    rmfd_path     = request.GET.get('rmfd_path', 'datasets/rmfd').strip()
+    dynamic       = request.GET.get('dynamic', 'false').lower() == 'true'
 
     return StreamingHttpResponse(
         run_accuracy_generator(
             limit, threshold, dataset,
             use_embedding=use_embedding,
-            rmfd_path=rmfd_path,
+            dynamic=dynamic,
         ),
         content_type='text/event-stream'
     )
@@ -350,8 +375,8 @@ def delete_user(request, user_id):
 
 def login_page(request, username):
     user = get_object_or_404(UserProfile, username=username)
-    request.session['face_attempts'] = 0
-    return render(request, 'verifier/login.html', {'user': user})
+    blocked = request.session.get(_attempts_key(username), 0) >= MAX_FACE_ATTEMPTS
+    return render(request, 'verifier/login.html', {'user': user, 'face_blocked': blocked})
 
 
 def logined_page(request, username):
