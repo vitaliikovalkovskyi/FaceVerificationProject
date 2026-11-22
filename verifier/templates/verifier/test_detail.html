@@ -1,0 +1,45 @@
+{% extends 'verifier/tests_base.html' %}
+{% block title %}{{ test.title }}{% endblock %}
+{% block width %}720px{% endblock %}
+{% block extra_style %}
+    .question { border: 1px solid var(--border); border-radius: 14px; padding: 1.25rem; margin-top: 1rem; }
+    .question legend { font-weight: 700; padding: 0 .35rem; }
+    .q-num { color: var(--primary); margin-right: .35rem; }
+    .choice { display: flex; align-items: flex-start; gap: 10px; padding: 10px 12px; border-radius: 10px;
+              cursor: pointer; transition: .15s; margin-top: 6px; }
+    .choice:hover { background: var(--bg-soft); }
+    .choice input { margin-top: 3px; accent-color: var(--primary); }
+    .choice:has(input:checked) { background: #eef2ff; }
+    .last { background: var(--bg-soft); border-radius: 12px; padding: 10px 14px; margin-top: 1rem; font-size: .9rem; }
+{% endblock %}
+{% block content %}
+    <div class="topbar">
+        <span class="badge">👤 {{ student.username }}</span>
+        <a href="{% url 'logout' %}?next={% url 'test_login' test.pk %}">Вийти</a>
+    </div>
+    <h1>{{ test.title }}</h1>
+    {% if test.description %}<p class="muted">{{ test.description }}</p>{% endif %}
+    <p class="muted">Питань: {{ questions|length }}. У кожному питанні одна правильна відповідь.</p>
+    {% if last_attempt %}
+        <div class="last">Ваш останній результат: <b>{{ last_attempt.score }} з {{ last_attempt.total }}</b>
+            (спроб: {{ attempts_count }}). Тест можна пройти ще раз.</div>
+    {% endif %}
+
+    <form method="post">
+        {% csrf_token %}
+        {% for q in questions %}
+        <fieldset class="question">
+            <legend><span class="q-num">{{ forloop.counter }}.</span>{{ q.text }}</legend>
+            {% for c in q.choices.all %}
+            <label class="choice">
+                <input type="radio" name="q_{{ q.pk }}" value="{{ c.pk }}" required>
+                <span>{{ c.text }}</span>
+            </label>
+            {% endfor %}
+        </fieldset>
+        {% endfor %}
+        <div class="actions">
+            <button type="submit" class="btn btn-block">Завершити</button>
+        </div>
+    </form>
+{% endblock %}

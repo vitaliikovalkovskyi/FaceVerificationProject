@@ -1,0 +1,18 @@
+{% extends 'verifier/tests_base.html' %}
+{% block title %}Реєстрацію завершено{% endblock %}
+{% block extra_style %}
+    .icon-circle { width: 72px; height: 72px; background: #d1fae5; color: var(--success); border-radius: 50%;
+                   display: flex; align-items: center; justify-content: center; font-size: 36px; margin: 0 auto 1rem; }
+{% endblock %}
+{% block content %}
+    <div style="text-align:center;">
+        <div class="icon-circle">✓</div>
+        <h1>Реєстрацію завершено</h1>
+        <p class="muted">Ви зареєстровані за запрошенням <b>{{ invite.title }}</b>.</p>
+        <p class="muted">Тепер відкрийте посилання на тест, яке надішле викладач.
+            Для входу знадобиться обличчя або код із застосунку-автентифікатора (2FA).</p>
+    </div>
+    <div class="actions">
+        <a class="btn btn-secondary" href="{% url 'start' %}">На головну</a>
+    </div>
+{% endblock %}

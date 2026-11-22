@@ -35,7 +35,7 @@
 <div id="loader" class="loader-overlay"><div class="spinner"></div><p style="font-weight: 700; color: var(--primary); margin-top: 15px;">ОБРОБКА ДАНИХ...</p></div>
 
 <div class="card" id="liveness-ui">
-    <a href="{% url 'user_list' %}" style="text-decoration: none; color: #64748b; font-size: 0.8rem; float: left;">← Назад</a>
+    <a href="{{ back_url }}" style="text-decoration: none; color: #64748b; font-size: 0.8rem; float: left;">← Назад</a>
     <h2 style="margin-top: 25px;">Вхід: <span style="color: var(--primary);">{{ user.username }}</span></h2>
 
     <div class="step-dots" id="dots-container">
@@ -506,7 +506,7 @@
             loader.style.display = 'none';
 
             if (data.success) {
-                window.location.href = `/login/success/{{ user.username }}/`;
+                window.location.href = "{{ next_url }}";
 
             } else if (data.error === "too_many_attempts") {
                 alert("FaceID заблоковано. Перехід на OTP.");
@@ -551,7 +551,7 @@
             headers: { 'X-CSRFToken': '{{ csrf_token }}' }
         });
         const data = await res.json();
-        if (data.success) window.location.href = "/login/success/{{ user.username }}/";
+        if (data.success) window.location.href = "{{ next_url }}";
         else alert(data.error);
     }
 

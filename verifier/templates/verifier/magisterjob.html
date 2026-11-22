@@ -358,6 +358,9 @@
                     <a href="{% url 'start' %}"><button type="button" class="btn btn-secondary">← Назад</button></a>
                 </div>
                 <h1>Реєстрація</h1>
+                {% if invite %}
+                <p class="subtitle" style="text-align:center;">Запрошення: <b>{{ invite.title }}</b></p>
+                {% endif %}
             </div>
 
             <div id="error-box" class="inline-error"></div>
@@ -649,7 +652,7 @@
                 hideLoader();
                 if (data.success) {
                     alert(`Вітаємо! Реєстрація успішна.\nПоріг верифікації: ${data.threshold ?? 'авто'}`);
-                    window.location.href = "{% url 'user_list' %}";
+                    window.location.href = data.next_url || "{% url 'user_list' %}";
                 } else {
                     showError(data.error);
                 }

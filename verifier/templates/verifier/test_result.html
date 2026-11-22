@@ -1,0 +1,26 @@
+{% extends 'verifier/tests_base.html' %}
+{% block title %}Результат: {{ attempt.test.title }}{% endblock %}
+{% block extra_style %}
+    .score { font-size: 3.2rem; font-weight: 800; color: var(--primary); margin: .5rem 0 0; }
+    .percent { font-size: 1.1rem; font-weight: 700; }
+    .bar { height: 10px; background: var(--border); border-radius: 99px; overflow: hidden; margin: 1rem 0; }
+    .bar > div { height: 100%; background: linear-gradient(90deg, var(--primary), #818cf8); }
+{% endblock %}
+{% block content %}
+    <div class="topbar">
+        <span class="badge">👤 {{ student.username }}</span>
+        <a href="{% url 'logout' %}?next={% url 'test_login' attempt.test.pk %}">Вийти</a>
+    </div>
+    <h1>Тест завершено</h1>
+    <p class="muted">{{ attempt.test.title }}</p>
+    <div style="text-align:center;">
+        <p class="score">{{ attempt.score }} / {{ attempt.total }}</p>
+        <p class="muted">правильних відповідей</p>
+        <p class="percent">{{ percent }} %</p>
+    </div>
+    <div class="bar"><div style="width: {{ percent }}%;"></div></div>
+    <div class="actions">
+        <a class="btn" href="{% url 'test_detail' attempt.test.pk %}">Пройти ще раз</a>
+        <a class="btn btn-secondary" href="{% url 'logout' %}?next={% url 'start' %}">Вийти</a>
+    </div>
+{% endblock %}

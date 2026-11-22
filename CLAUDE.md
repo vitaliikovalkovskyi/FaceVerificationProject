@@ -46,6 +46,16 @@ mfr2 маска 93–100 %, чисте 100 %.
 | LFW multi-ref | 97 → 96 % | 0 → 1.98 % | 6.06 → 6.06 % | 3 % |
 Поріг EER: маски ~0.84–0.87, без масок ~0.66.
 
+## Demo use case: система проходження тестів (`verifier/views_tests.py`)
+Моделі `Invite`, `Test`, `Question`, `Choice`, `Attempt` (міграція 0004), усі в Django admin.
+`/invite/<token>/` → наявна реєстрація (одне посилання на групу, багаторазове, `is_active` / `expires_at`, лічильник
+`registrations`); після реєстрації — `/invite/<token>/done/`. `/tests/<id>/` без входу → `/tests/<id>/login/`
+(список студентів) → `/tests/<id>/login/<username>/` = той самий `login.html` (`render_login` у views.py, з `next_url`).
+Вхід фіксується в сесії (`SESSION_USER_KEY = 'auth_username'`) лише після успішної верифікації обличчям або OTP.
+Спроби не обмежені; результат бачить лише власник. Відкрита реєстрація `/magisterjob/` лишилась.
+Команди: `seed_tests` (3 тести × 5 питань, не дублює), `create_invite "<група>" [--days N]`.
+Пороги, класифікатор маски й liveness цей use case не змінює. Ручний сценарій — у README.md.
+
 ## Поріг верифікації (калібрування під FAR ≤ 1 %)
 Стара формула (0.68 + 0.5·intra, ≤ 0.82) фактично давала 0.82 і FAR ~10 % (LFW/mfr2).
 Нова (`embedding_utils.py`): BASE_THRESHOLD 0.64 + clip(−1.0·(intra − 0.44), ±0.02). Калібровано на половині людей

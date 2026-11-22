@@ -9,7 +9,9 @@ from django.shortcuts import render, redirect, get_object_or_404
 from django.http import JsonResponse, StreamingHttpResponse
 from django.conf import settings
 from django.core.files.base import ContentFile
-from .models import UserProfile
+from django.db.models import F
+from django.urls import reverse
+from .models import Invite, UserProfile
 from .embedding_utils import (
     embed_reference_photos,
     build_reference_embedding,
@@ -194,10 +196,18 @@ def register_step2(request):
         for key in REG_SESSION_KEYS:
             request.session.pop(key, None)
 
+        # Реєстрація за посиланням-запрошенням: лічильник і сторінка «що далі»
+        next_url = None
+        invite = Invite.objects.filter(id=request.session.pop('invite_id', None)).first()
+        if invite:
+            Invite.objects.filter(id=invite.id).update(registrations=F('registrations') + 1)
+            next_url = reverse('invite_done', args=[invite.token])
+
         return JsonResponse({
             "success": True,
             "message": f"Реєстрація завершена! Використано {photo_count} фото для embedding.",
             "threshold": round(personal_threshold, 4),
+            "next_url": next_url,
         })
 
     return JsonResponse({"success": False, "error": "Method not allowed"}, status=405)
@@ -211,10 +221,33 @@ def register_step2(request):
 # окремо для кожного користувача і скидається тільки після успішного входу.
 # ============================================================
 MAX_FACE_ATTEMPTS = 3
+SESSION_USER_KEY = 'auth_username'   # хто увійшов (ставиться лише після успішної верифікації)
 
 
 def _attempts_key(username):
     return f"face_attempts_{username}"
+
+
+def _mark_logged_in(request, username):
+    request.session[_attempts_key(username)] = 0
+    request.session[SESSION_USER_KEY] = username
+
+
+def current_user(request):
+    """UserProfile, який увійшов у цій сесії (обличчям або OTP), або None."""
+    username = request.session.get(SESSION_USER_KEY)
+    return UserProfile.objects.filter(username=username).first() if username else None
+
+
+def render_login(request, user, next_url=None, back_url=None):
+    """Сторінка входу (liveness → обличчя, після 3 невдач — OTP); після успіху — перехід на next_url."""
+    blocked = request.session.get(_attempts_key(user.username), 0) >= MAX_FACE_ATTEMPTS
+    return render(request, 'verifier/login.html', {
+        'user': user,
+        'face_blocked': blocked,
+        'next_url': next_url or reverse('logined_page', args=[user.username]),
+        'back_url': back_url or reverse('user_list'),
+    })
 
 
 def login_face_verify(request):
@@ -254,7 +287,7 @@ def login_face_verify(request):
             )
 
             if result["verified"]:
-                request.session[key] = 0
+                _mark_logged_in(request, username)
                 return JsonResponse({
                     "success": True,
                     "message": "Обличчя підтверджено!",
@@ -321,7 +354,7 @@ def login_otp_verify(request):
         user = get_object_or_404(UserProfile, username=username)
         totp = pyotp.TOTP(user.totp_secret)
         if totp.verify(otp_code):
-            request.session[_attempts_key(username)] = 0
+            _mark_logged_in(request, username)
             return JsonResponse({"success": True, "message": "Вхід успішний!"})
         return JsonResponse({"success": False, "error": "Невірний код."})
     return JsonResponse({"error": "Method not allowed"}, status=405)
@@ -375,8 +408,7 @@ def delete_user(request, user_id):
 
 def login_page(request, username):
     user = get_object_or_404(UserProfile, username=username)
-    blocked = request.session.get(_attempts_key(username), 0) >= MAX_FACE_ATTEMPTS
-    return render(request, 'verifier/login.html', {'user': user, 'face_blocked': blocked})
+    return render_login(request, user)
 
 
 def logined_page(request, username):
@@ -388,4 +420,5 @@ def startpage(request):
 
 
 def magisterjob(request):
+    request.session.pop('invite_id', None)   # звичайна (відкрита) реєстрація
     return render(request, 'verifier/magisterjob.html')

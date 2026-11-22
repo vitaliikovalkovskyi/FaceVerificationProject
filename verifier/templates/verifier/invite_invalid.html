@@ -1,0 +1,10 @@
+{% extends 'verifier/tests_base.html' %}
+{% block title %}Запрошення недійсне{% endblock %}
+{% block content %}
+    <h1>Запрошення недійсне</h1>
+    <p class="muted">Посилання не існує, вимкнене викладачем або термін його дії минув.
+        Зверніться до викладача за новим посиланням.</p>
+    <div class="actions">
+        <a class="btn btn-secondary" href="{% url 'start' %}">На головну</a>
+    </div>
+{% endblock %}
